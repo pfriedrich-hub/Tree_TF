@@ -29,7 +29,7 @@ def record_tf(signal, distance, n_recordings):
     rec = slab.Sound(numpy.mean(numpy.asarray(recordings), axis=0))  # average
     rec.data -= numpy.mean(rec.data, axis=0)  # baseline
     with numpy.errstate(divide='ignore'):
-        tf = numpy.fft.rfft(rec) / signal_fft  # compute tf
+        tf = numpy.fft.rfft(rec.data[:, 0]) / signal_fft  # compute tf
         tf = slab.Filter(tf.T, fs, fir='TF')  # create slab filter
     return tf, rec
 
@@ -55,4 +55,4 @@ if __name__ == "__main__":
         data_dir.mkdir(parents=True, exist_ok=True)  # create condition directory if it doesnt exist
         with open(data_dir / 'TF.pkl', 'wb') as f:
             pickle.dump(tf, f, pickle.HIGHEST_PROTOCOL)
-        rec.write(data_dir / 'TF.pkl' / f'{id}.wav')
+        rec.write(data_dir / f'{id}.wav')
