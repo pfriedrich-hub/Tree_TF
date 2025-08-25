@@ -29,7 +29,7 @@ def record_tf(signal, distance, n_recordings):
     rec = slab.Sound(numpy.mean(numpy.asarray(recordings), axis=0))  # average
     rec.data -= numpy.mean(rec.data, axis=0)  # baseline
     with numpy.errstate(divide='ignore'):
-        tf = numpy.abs(numpy.fft.rfft(rec.data[:, 0]) / signal_fft)  # compute tf
+        tf = numpy.abs(numpy.fft.rfft(rec.data[:, 0]) / signal_fft)  # compute tf and get power spectrum
         tf = slab.Filter(tf.T, fs, fir='TF')  # create slab filter
     return tf, rec
 
