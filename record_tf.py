@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy
 import pickle
 import slab
-import freefield
+# import freefield
 fs = 48828
 slab.set_default_samplerate(fs)
 
@@ -29,7 +29,7 @@ def record_tf(signal, distance, n_recordings):
     rec = slab.Sound(numpy.mean(numpy.asarray(recordings), axis=0))  # average
     rec.data -= numpy.mean(rec.data, axis=0)  # baseline
     with numpy.errstate(divide='ignore'):
-        tf = numpy.fft.rfft(rec.data[:, 0]) / signal_fft  # compute tf
+        tf = numpy.abs(numpy.fft.rfft(rec.data[:, 0]) / signal_fft)  # compute tf
         tf = slab.Filter(tf.T, fs, fir='TF')  # create slab filter
     return tf, rec
 
