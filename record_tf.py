@@ -2,12 +2,13 @@
 Play and record an FM Sweep to obtain the transfer function
 """
 import matplotlib
+import matplotlib.pyplot as plt
 matplotlib.use('TkAgg')
 from pathlib import Path
 import numpy
 import pickle
 import slab
-# import freefield
+import freefield
 fs = 48828
 slab.set_default_samplerate(fs)
 
@@ -19,9 +20,13 @@ level = 70  # signal level
 duration = 0.5  # signal duration
 low_freq = 20  # signal frequencies
 high_freq = 20000
-write = True  # save recordings.wav and tf.pkl
 
-def record_tf(signal, distance, n_recordings):
+def record(distance, n_recordings):
+    # make signal
+    signal = slab.Sound.chirp(duration=duration, level=level, from_frequency=low_freq, to_frequency=high_freq,
+                              kind='linear')
+    signal = signal.ramp(when='both', duration=0.005)
+    signal_fft = numpy.fft.rfft(signal.data[:, 0])
     print('Recording...')
     recordings = []
     for r in range(n_recordings):    # record
@@ -33,26 +38,33 @@ def record_tf(signal, distance, n_recordings):
         tf = slab.Filter(tf.T, fs, fir='TF')  # create slab filter
     return tf, rec
 
+def write(id, rec, tf):
+    # write data
+    data_dir = Path.cwd() / 'data' / id
+    data_dir.mkdir(parents=True, exist_ok=True)  # create condition directory if it doesnt exist
+    counter = 1
+    while Path.exists(data_dir / f'{id}.wav'):
+        id += f'_{counter}'
+        counter += 1
+    with open(data_dir / f'{id}_TF.pkl', 'wb') as f:
+        pickle.dump(tf, f, pickle.HIGHEST_PROTOCOL)
+    rec.write(data_dir / f'{id}.wav')
+    # plot
+    fig, axes = plt.subplots(2, 1, figsize=(10, 10), constrained_layout=True)
+    rec.waveform(axis=axes[0])
+    tf.tf(axis=axes[1])
+    axes[1].set_xlim(low_freq, high_freq)
+    fig.title(id)
+    plt.savefig(data_dir / f'{id}.png')
+
+
 if __name__ == "__main__":
     # initialize
     if not freefield.PROCESSORS.mode:
         proc_list = [['RP2', 'RP2', Path.cwd() / 'data' / 'rcx' / 'bi_play_rec_buf.rcx']]
         freefield.initialize('headphones', device=proc_list, connection='USB', zbus=False)
         freefield.PROCESSORS.mode = 'bi_play_rec'
-        freefield.set_logger('info')  # todo check recording delay
-    # make signal
-    signal = slab.Sound.chirp(duration=duration, level=level, from_frequency=low_freq, to_frequency=high_freq,
-                              kind='linear')
-    signal = signal.ramp(when='both', duration=0.005)
-    signal_fft = numpy.fft.rfft(signal.data[:, 0])
-    # record and compute tf
-    tf, rec = record_tf(signal, distance, n_recordings)
+        freefield.set_logger('info')
 
-    # write data
-    if write:
-        data_dir = Path.cwd() / 'data' / id
-        # write recordings and tf
-        data_dir.mkdir(parents=True, exist_ok=True)  # create condition directory if it doesnt exist
-        with open(data_dir / 'TF.pkl', 'wb') as f:
-            pickle.dump(tf, f, pickle.HIGHEST_PROTOCOL)
-        rec.write(data_dir / f'{id}.wav')
+    tf, rec = record(distance, n_recordings)  # record and compute tf
+    write(id, rec, tf)  # write and plot
