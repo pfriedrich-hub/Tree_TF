@@ -2,8 +2,8 @@
 Play and record an FM Sweep to obtain the transfer function
 """
 import matplotlib
-import matplotlib.pyplot as plt
 matplotlib.use('TkAgg')
+from matplotlib import pyplot as plt
 from pathlib import Path
 import numpy
 import pickle
@@ -13,10 +13,10 @@ fs = 48828
 slab.set_default_samplerate(fs)
 
 # settings
-id = 'free mic'  # ID of the recording
+id = '353_9.1_255W_ref'  # ID of the recording (will create a new subfolder)
 distance = 0  # distance between microphone and speaker in meters
 n_recordings = 10  # number of recordings to average
-level = 70  # signal level
+level = 85  # signal level
 duration = 0.5  # signal duration
 low_freq = 20  # signal frequencies
 high_freq = 20000
@@ -54,7 +54,7 @@ def write(id, rec, tf):
     rec.waveform(axis=axes[0])
     tf.tf(axis=axes[1])
     axes[1].set_xlim(low_freq, high_freq)
-    fig.title(id)
+    plt.title(id)
     plt.savefig(data_dir / f'{id}.png')
 
 
