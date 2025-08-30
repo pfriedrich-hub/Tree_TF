@@ -9,7 +9,7 @@ import numpy
 import pickle
 import slab
 import freefield
-fs = 48828
+fs = 48828  # sampling rate of the TDT processor
 slab.set_default_samplerate(fs)
 
 # settings
@@ -35,7 +35,7 @@ def record(distance, n_recordings):
     rec.data -= numpy.mean(rec.data, axis=0)  # baseline
     with numpy.errstate(divide='ignore'):
         tf = numpy.abs(numpy.fft.rfft(rec.data[:, 0]) / signal_fft)  # compute tf and get power spectrum
-        tf = slab.Filter(tf.T, fs, fir='TF')  # create slab filter
+        tf = slab.Filter(tf.T, fs, fir='TF')  # store in a slab filter object
     return tf, rec
 
 def write(id, rec, tf):
@@ -44,7 +44,7 @@ def write(id, rec, tf):
     data_dir.mkdir(parents=True, exist_ok=True)  # create condition directory if it doesnt exist
     counter = 1
     while Path.exists(data_dir / f'{id}.wav'):
-        id += f'_{counter}'
+        id = f'{id}_{counter}'
         counter += 1
     with open(data_dir / f'{id}_TF.pkl', 'wb') as f:
         pickle.dump(tf, f, pickle.HIGHEST_PROTOCOL)
@@ -56,7 +56,6 @@ def write(id, rec, tf):
     axes[1].set_xlim(low_freq, high_freq)
     plt.title(id)
     plt.savefig(data_dir / f'{id}.png')
-
 
 if __name__ == "__main__":
     # initialize
