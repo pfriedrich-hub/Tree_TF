@@ -13,7 +13,7 @@ low_freq = 20  # signal frequencies
 high_freq = 20000
 signal = slab.Sound.chirp(duration=duration, level=level, from_frequency=low_freq, to_frequency=high_freq,
                           kind='linear')  # make signal
-signal = signal.ramp(when='both', duration=0.005)  # cosine ramp to avoid clicks
+signal = signal.ramp(when='both', duration=0.005)  # ramp signal to avoid clicks
 window_size = 120  # time window applied to the resulting IR to remove reflections
 show = True  # whether to show a plot of the recording and resulting transfer function
 
@@ -28,9 +28,9 @@ if __name__ == "__main__":
     data_dir.mkdir(parents=True, exist_ok=True)
     # record a signal and write to sound file in /data / id / id_rec.wav
     recording = record(id, n_recordings, distance, show)
-    # compute the tf and write to /data / id / id_tf.pkl
+    # compute the tf
     raw_tf, windowed_tf = compute_tf(id, window_size, show)
-    # put the recording, raw and windowed tf in a dictionary and save to pkl file
+    # put the recording, raw, and windowed tf in a dictionary and save to pickle file (data / id / id.pkl)
     write(id=id, recording=recording, raw_tf=raw_tf, windowed_tf=windowed_tf)
 
 

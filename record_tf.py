@@ -79,7 +79,7 @@ def compute_tf(id=None, recording=None, reference=None, window_size=120, show=Tr
         ax.set_xlim(0, 2.1e4)
         ax.set_ylim(-40, 20)
         plt.title('windowed tf')
-    # convert to slab.Filter
+    # convert to slab.Filter and return
     ir_windowed.data
     return raw_tf, windowed_tf
 
