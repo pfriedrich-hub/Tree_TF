@@ -3,6 +3,8 @@ Play and record an FM Sweep to obtain the transfer function
 """
 import matplotlib
 matplotlib.use('TkAgg')
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)  # todo test this
 from matplotlib import pyplot as plt
 from pathlib import Path
 import numpy
@@ -14,7 +16,7 @@ import freefield
 fs = 48828  # sampling rate of the TDT processor
 slab.set_default_samplerate(fs)
 
-def record(id, signal, n_recordings, distance, show, axis=None):
+def record(id, signal, n_recordings, distance, show=True, axis=None):
     # record n_recordings times
     print('Recording...')
     recordings = []
@@ -45,42 +47,43 @@ def compute_tf(id=None, recording=None, reference=None, window_size=120, show=Tr
     :param show (bool): whether to plot the resulting tf
     :return: tf (slab.Filter): the resulting transfer function
     """
-    if id:  # load recording and reference
-        recording_path = Path('data' / id / f'{id}.wav')
-        reference_path = Path('data' / 'reference.wav')
-        if Path('data' / id / f'{id}.wav').exists():
-            logging.info(f'Load recording from {recording_path}')
-            recording = slab.Sound.read(recording_path)
-        else: logging.error(f'Recording file not found: {recording_path}')
-        if reference_path.exists():
-            logging.info(f'Load reference from {reference_path}')
-            reference = slab.Sound.read(reference_path)
-        else: logging.error(f'Reference file not found: {reference_path}')
-    elif not(recording or reference):
-        logging.error('Must provide id to load an existing recording and reference or directly specify the'
-                      ' recording/reference in the function call to compute a transfer function.')
-    # get recording and reference signal from input arguments (must be slab.Sound objects)
-    # convert to pyfar.Signal objects:
+    if not recording:
+        if id:
+            recording_path = Path('data' / id / f'{id}.wav')
+            try:
+                logging.info(f'Load recording from {recording_path}')
+                recording = slab.Sound.read(recording_path)
+            except FileNotFoundError:
+                logging.error('Must provide id or recording data to compute TF.')
+    if not reference:
+        if id:
+            reference_path = Path('data' / id / f'{id}.wav')
+            try:
+                logging.info(f'Load reference from {reference_path}')
+                reference = slab.Sound.read(reference_path)
+            except FileNotFoundError:
+                logging.error('Must provide id or reference data to compute TF.')
+    # convert slab.Sound to pyfar.Signal:
     reference = pyfar.Signal(data=reference.data.T, sampling_rate=reference.samplerate)
     recording = pyfar.Signal(recording.data.T, sampling_rate=recording.samplerate)
     reference_inverted = pyfar.dsp.regularized_spectrum_inversion(reference, frequency_range=(20, 19.75e3))
     ir_deconvolved = recording * reference_inverted  # convolution in time domain = multiplication in frequency domain
-    if show:  # plot
-        plt.figure()
-        ax = pyfar.plot.time_freq(ir_deconvolved, unit='samples')
-        ax[0].set_xlim(0, 1e3)
-        ax[0].set_title('raw tf')
-        ax[1].set_ylim(-40, 20)
+    # plt.figure()
+    # ax = pyfar.plot.time_freq(ir_deconvolved, unit='samples')
+    # ax[0].set_xlim(0, 1e3)
+    # ax[0].set_title('raw tf')
+    # ax[1].set_ylim(-40, 20)
     # window the impulse response
     ir_windowed = pyfar.dsp.time_window(ir_deconvolved, (0, window_size), 'boxcar', unit='samples', crop='window')
     ir_windowed = pyfar.dsp.pad_zeros(ir_windowed, ir_deconvolved.n_samples - ir_windowed.n_samples)
-    if show:  # plot
-        pyfar.plot.freq(ir_windowed)
-        ax.set_xlim(0, 2.1e4)
-        ax.set_ylim(-40, 20)
-        plt.title('windowed tf')
-    # convert to slab.Filter and return
-    ir_windowed.data
+    # if show:  # plot
+    #     pyfar.plot.freq(ir_windowed)
+    #     ax.set_xlim(0, 2.1e4)
+    #     ax.set_ylim(-40, 20)
+    #     plt.title('windowed tf')
+    # convert to slab.Filter # todo
+    raw_tf = slab.Filter(data=numpy.abs(ir_deconvolved.freq), samplerate=ir_deconvolved.samplerate)
+    windowed_tf = slab.Filter(data=numpy.abs(ir_windowed.freq), samplerate=ir_deconvolved.samplerate)
     return raw_tf, windowed_tf
 
 def write(id, recording, raw_tf, windowed_tf):
