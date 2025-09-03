@@ -29,19 +29,11 @@ def record(id, signal, n_recordings, rec_distance, show=True, axis=None):
         plt.title(f'{id} Waveform')
     # write to file
     counter = 1  # prevent overwriting
-    while Path.exists('data' / id / f'{id}_rec.wav'):
+    while (Path.cwd() / 'data' / id / f'{id}_rec.wav').exists():
         id = f'{id}_{counter}'
         counter += 1
-    recording.write('data' / id / f'{id}_rec.wav')
-    data_dir = Path.cwd() / 'data' / id
-    data_dir.mkdir(parents=True, exist_ok=True)
-    out_wav = data_dir / f'{id}_rec.wav'
-    counter = 1
-    while out_wav.exists():
-        out_wav = data_dir / f'{id}_rec_{counter}.wav'
-        counter += 1
-    recording.write(out_wav)
-    return recording
+    recording.write(Path.cwd() /'data' / id / f'{id}_rec.wav')
+    return recording, id
 
 def compute_tf(id=None, rec_distance=1.0, recording=None, reference=None, window_size=120):
     """
@@ -57,14 +49,14 @@ def compute_tf(id=None, rec_distance=1.0, recording=None, reference=None, window
     """
     # --- Load signals if needed ---
     if recording is None and id:
-        recording_path = Path.cwd() / 'data' / id / f'{id}.wav'
+        recording_path = Path.cwd() / 'data' / id / f'{id}_rec.wav'
         try:
             logging.info(f'Load recording from {recording_path}')
             recording = slab.Sound.read(recording_path)
         except FileNotFoundError:
             logging.error('Must provide id or recording data to compute TF.')
-    if reference is None and id:
-        reference_path = Path.cwd() / 'data' / f'{id}_ref' / f'{id}_ref.wav'
+    if reference is None:
+        reference_path = Path.cwd() / 'data' / 'ref' / 'ref_rec.wav'
         try:
             logging.info(f'Load reference from {reference_path}')
             reference = slab.Sound.read(reference_path)
@@ -75,7 +67,7 @@ def compute_tf(id=None, rec_distance=1.0, recording=None, reference=None, window
     if rec_distance <= 0:
         raise ValueError("rec_distance must be positive and non-zero.")
     # --- Distance-correct the FREE-FIELD reference from 1 m -> rec_distance ---
-    if rec_distance != 1.0:
+    if rec_distance != 2.0:
         reference = distance_scale(reference, input_distance=1.0, output_distance=rec_distance)
     # --- Convert to pyfar.Signal ---
     reference_pf = pyfar.Signal(data=reference.data.T, sampling_rate=reference.samplerate)
@@ -136,7 +128,7 @@ def write(id, recording, raw_tf, windowed_tf):
     id_dict = {'recording': recording, 'raw_tf': raw_tf, 'windowed_tf': windowed_tf}
     data_dir = Path.cwd() / 'data' / id
     counter = 1
-    while Path.exists(data_dir / f'{id}.pkl'):
+    while (Path.cwd() / 'data' / id /f'{id}.pkl').exists():
         id = f'{id}_{counter}'
         counter += 1
     import pickle

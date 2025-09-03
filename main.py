@@ -2,8 +2,8 @@ import matplotlib.pyplot as plt
 from record_tf import *
 
 # --- Settings --- #
-id = '313_4.6_20N'  # ID of the recording (will create a new subfolder)
-rec_distance = 1.8 # distance between microphone and speaker in meters
+id = f'518_4.6_0N'  # ID of the recording (will create a new subfolder)
+rec_distance = 5 # distance between microphone and speaker in meters
 n_recordings = 10  # number of recordings to average
 level = 85  # signal level
 duration = 0.5  # signal duration
@@ -25,8 +25,9 @@ if __name__ == "__main__":
     freefield.initialize('headphones', device=proc_list, connection='USB', zbus=False)
     freefield.PROCESSORS.mode = 'bi_play_rec'
     freefield.set_logger('info')  # set to 'debug' if you want full report from the processor
+    Path.mkdir(Path.cwd() / 'data' / id, exist_ok=True, parents=True)
     # record a signal and write to sound file in /data / id / id_rec.wav
-    recording = record(id, n_recordings, rec_distance, show=False)
+    recording, id = record(id, signal, n_recordings, rec_distance, show=False)
     # compute the tf
     raw_tf, windowed_tf = compute_tf(id, rec_distance, window_size=window_size)
     # plot results
