@@ -1,0 +1,17 @@
+name: acoustics
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - jupyter
+  - pip
+  - pip:
+      - slab
+      - pyfar

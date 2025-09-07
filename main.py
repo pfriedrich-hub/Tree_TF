@@ -3,6 +3,7 @@ from record_tf import *
 
 # --- Settings --- #
 id = f'518_4.6_0N'  # ID of the recording (will create a new subfolder)
+ref_distance = 2
 rec_distance = 5 # distance between microphone and speaker in meters
 n_recordings = 10  # number of recordings to average
 level = 85  # signal level
@@ -29,10 +30,10 @@ if __name__ == "__main__":
     # record a signal and write to sound file in /data / id / id_rec.wav
     recording, id = record(id, signal, n_recordings, rec_distance, show=False)
     # compute the tf
-    raw_tf, windowed_tf = compute_tf(id, rec_distance, window_size=window_size)
+    reference, raw_tf, windowed_tf = compute_tf(id, ref_distance, rec_distance, window_size=window_size)
     # plot results
     if show:
         fig, axes = plot(recording, raw_tf, windowed_tf)
         fig.suptitle(id)
     # save to results in a pickle file (data / id / id.pkl)
-    write(id=id, recording=recording, raw_tf=raw_tf, windowed_tf=windowed_tf)
+    write(id=id, reference=reference, recording=recording, raw_tf=raw_tf, windowed_tf=windowed_tf)

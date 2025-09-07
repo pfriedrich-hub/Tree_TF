@@ -1,6 +1,6 @@
 """
 Play and record an FM Sweep to obtain the transfer function (tree canopy).
-Distance correction is applied to the FREE-FIELD REFERENCE (measured at 1 m)
+Distance correction is applied to the FREE-FIELD REFERENCE (measured at 2 m)
 so that it matches the canopy mic distance before deconvolution.
 """
 import matplotlib
@@ -11,7 +11,7 @@ import numpy
 import slab
 import pyfar
 import logging
-import freefield
+#import freefield
 fs = 48828  # sampling rate of the TDT processor
 slab.set_default_samplerate(fs)
 
@@ -35,15 +35,15 @@ def record(id, signal, n_recordings, rec_distance, show=True, axis=None):
     recording.write(Path.cwd() /'data' / id / f'{id}_rec.wav')
     return recording, id
 
-def compute_tf(id=None, rec_distance=1.0, recording=None, reference=None, window_size=120):
+def compute_tf(id=None, ref_distance=None, rec_distance=None, recording=None, reference=None, window_size=120):
     """
     Compute the Transfer Function of the system (tree canopy).
-    We scale the free-field reference (measured at 1 m) to the canopy mic
+    We scale the free-field reference (measured at 2 m) to the canopy mic
     distance (rec_distance) to remove geometric spreading (inverse square law)
     :param id (string): if given, auto-load recording and reference from disk
     :param rec_distance (float): distance source->canopy mic [m]
     :param recording (slab.Sound): canopy-path recording (tree)
-    :param reference (slab.Sound): free-field reference recorded at 1 m
+    :param reference (slab.Sound): free-field reference recorded at 2 m
     :param window_size (int): window length in milliseconds for IR (removes late reflections)
     :return: raw_tf (slab.Filter), windowed_tf (slab.Filter)
     """
@@ -67,8 +67,8 @@ def compute_tf(id=None, rec_distance=1.0, recording=None, reference=None, window
     if rec_distance <= 0:
         raise ValueError("rec_distance must be positive and non-zero.")
     # --- Distance-correct the FREE-FIELD reference from 1 m -> rec_distance ---
-    if rec_distance != 2.0:
-        reference = distance_scale(reference, input_distance=1.0, output_distance=rec_distance)
+    #if rec_distance != 2.0:
+    reference = distance_scale(reference, input_distance=ref_distance, output_distance=rec_distance)
     # --- Convert to pyfar.Signal ---
     reference_pf = pyfar.Signal(data=reference.data.T, sampling_rate=reference.samplerate)
     recording_pf = pyfar.Signal(data=recording.data.T, sampling_rate=recording.samplerate)
@@ -85,10 +85,10 @@ def compute_tf(id=None, rec_distance=1.0, recording=None, reference=None, window
                          samplerate=ir_deconvolved.sampling_rate, fir='TF')
     windowed_tf = slab.Filter(data=numpy.abs(ir_windowed.freq),
                               samplerate=ir_deconvolved.sampling_rate, fir='TF')
-    return raw_tf, windowed_tf
+    return reference, raw_tf, windowed_tf
 
 
-def distance_scale(sound, input_distance, output_distance=1.0):
+def distance_scale(sound, input_distance, output_distance):
     """
     Scale a recording by the inverse square law.
     For audio waveforms, sound pressure amplitude falls off by 1/distance.
@@ -107,7 +107,7 @@ def distance_scale(sound, input_distance, output_distance=1.0):
     return scaled
 
 def plot(recording, raw_tf, windowed_tf):
-    fig, axes = plt.subplots(3, 1, figsize=(10, 10), constrained_layout=True)
+    fig, axes = plt.subplots(3, 1, figsize=(10, 20), constrained_layout=True)
     recording.waveform(axis=axes[0])
     axes[0].set_title('Raw recording')
     raw_tf.tf(axis=axes[1])
@@ -121,11 +121,11 @@ def plot(recording, raw_tf, windowed_tf):
     return fig, axes
 
 
-def write(id, recording, raw_tf, windowed_tf):
+def write(id, reference, recording, raw_tf, windowed_tf):
     """
     Write the recording and the transfer functions to the disk.
     """
-    id_dict = {'recording': recording, 'raw_tf': raw_tf, 'windowed_tf': windowed_tf}
+    id_dict = {'reference': reference, 'recording': recording, 'raw_tf': raw_tf, 'windowed_tf': windowed_tf}
     data_dir = Path.cwd() / 'data' / id
     counter = 1
     while (Path.cwd() / 'data' / id /f'{id}.pkl').exists():
