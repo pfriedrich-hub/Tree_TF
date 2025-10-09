@@ -17,6 +17,38 @@ notes:
   using compute_tf_from_signals(), which does NOT re-apply distance scaling.
 """
 
+"""
+TODO:
+    1. eliminate unrealistic low frequencies (no sound from speaker or not relevant in anthropospheres)
+        - research: meaning of the window size: noteboook on git
+            notes:
+                - window size not in ms but in samples
+                - need to try different values and see what happens in the frequency domain
+        - research: relevant frequencies in anthropospheres
+            notes:
+                - there are studies suggesting highest noise pollution in cities from low frequencies: https://www.sciencedirect.com/science/article/pii/S0048969721006689
+                - others start at 100Hz: https://doi.org/10.1177/1351010X16678218
+                - or slightly below 100Hz: https://www.mdpi.com/1424-8220/23/4/1912
+                - low frequency noise seems to be less healthy: https://www.thieme-connect.de/products/ejournals/abstract/10.1055/s-0043-1769497
+                - so cut the frequencies according to the speaker, not human made sounds
+                - idea: separate frequency bands according to typical sources and map tree per source
+        - cut 0-line of raw recording (automatization code), compare fft of raw recording with and without 0-line, also look at per-tree TFs with distance and median scaling and heatmaps of band attenuation
+        - play with window size according to notebook and compare tfs (median/distance scaled, heatmaps of band attenuation)
+        - find optimal window size for the TF starting at 100 Hz/realistic frequency, look at tf (distance/median scaling and heatmap of band attenuation)
+    2. fix reference scaling/ampification of low frequencies:
+        - research: ISO-implementation-code
+        - research: multiplication in frequency domain convolution in time domain, so is the deconvolution done by a scaling in frequency domain? is this the trick?
+        - try baselining of lowest frequency in frequency domain before or after deconvolution and look at tfs with different scalings and heatmaps
+    3. minor fixes:
+        - root mean square (RMS) instead of median scaling
+        - annotate real frequencies in bands on x-axis
+        - octave scaling instead of logarithmic
+    4. TLS-Scans:
+        - important information of every tree
+        - printed
+    5. model absorption potential predicted by tree traits -> look into satellite data and find silent places from tree traits
+"""
+
 import pickle
 from pathlib import Path
 from collections import defaultdict
@@ -35,29 +67,68 @@ WINDOW_SIZE = 120  # ms
 ROLLING_WINDOW = 5  # bins for smoothing TF
 SHOW = False
 
-LOG_IDS = {"227", "257", "247", "277", "499", "502", "332", "274", "232",
-           "467", "270", "281", "298", "327", "518", "333", "342"}
+LOG_IDS = {
+    "227",
+    "257",
+    "247",
+    "277",
+    "499",
+    "502",
+    "332",
+    "274",
+    "232",
+    "467",
+    "270",
+    "281",
+    "298",
+    "327",
+    "518",
+    "333",
+    "342",
+}
 
 # --- Tree mappings ---
 species_map_short = {
-    "227": "Lar dec", "247": "Pop tre", "257": "Pse men", "277": "Pru avi",
-    "499": "Til tom", "502": "Ced deo", "332": "Pin nig", "274": "Pop tre",
-    "232": "Pru avi", "467": "Til tom", "281": "Lar dec", "270": "Aln glu",
-    "298": "Abi gra", "327": "Sal cap", "518": "Til tom", "342": "Pse men",
-    "333": "Pin nig", "313": "Aln glu", "344": "Abi gra", "353": "Sal cap",
+    "227": "Lar dec",
+    "247": "Pop tre",
+    "257": "Pse men",
+    "277": "Pru avi",
+    "499": "Til tom",
+    "502": "Ced deo",
+    "332": "Pin nig",
+    "274": "Pop tre",
+    "232": "Pru avi",
+    "467": "Til tom",
+    "281": "Lar dec",
+    "270": "Aln glu",
+    "298": "Abi gra",
+    "327": "Sal cap",
+    "518": "Til tom",
+    "342": "Pse men",
+    "333": "Pin nig",
+    "313": "Aln glu",
+    "344": "Abi gra",
+    "353": "Sal cap",
 }
 
 species_long_map = {
-    "Lar dec": "Larix decidua", "Pop tre": "Populus tremula", "Pse men": "Pseudotsuga menziesii",
-    "Pru avi": "Prunus avium", "Til tom": "Tilia tomentosa", "Ced deo": "Cedrus deodara",
-    "Pin nig": "Pinus nigra", "Aln glu": "Alnus glutinosa", "Abi gra": "Abies grandis",
+    "Lar dec": "Larix decidua",
+    "Pop tre": "Populus tremula",
+    "Pse men": "Pseudotsuga menziesii",
+    "Pru avi": "Prunus avium",
+    "Til tom": "Tilia tomentosa",
+    "Ced deo": "Cedrus deodara",
+    "Pin nig": "Pinus nigra",
+    "Aln glu": "Alnus glutinosa",
+    "Abi gra": "Abies grandis",
     "Sal cap": "Salix caprea",
 }
 
 needleleaf_set = {"Lar dec", "Pse men", "Pin nig", "Abi gra", "Ced deo"}
-broadleaf_set  = {"Pop tre", "Pru avi", "Til tom", "Aln glu", "Sal cap"}
+broadleaf_set = {"Pop tre", "Pru avi", "Til tom", "Aln glu", "Sal cap"}
 
 # --- Utilities ---
+
 
 def parse_distance(foldername: str) -> float:
     try:
@@ -65,6 +136,7 @@ def parse_distance(foldername: str) -> float:
         return float(dist_str.replace(",", "."))
     except Exception:
         return None
+
 
 def get_tree_dirs(base_dir: Path):
     for f in base_dir.iterdir():
@@ -79,9 +151,13 @@ def get_tree_dirs(base_dir: Path):
             continue
         yield f
 
+
 def find_first_pkl(folder: Path):
-    pkl_all = sorted(folder.glob("*.pkl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    pkl_all = sorted(
+        folder.glob("*.pkl"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
     return pkl_all[0] if pkl_all else None
+
 
 def load_tree_pkl(tree_dir: Path):
     pkl_path = find_first_pkl(tree_dir)
@@ -95,9 +171,12 @@ def load_tree_pkl(tree_dir: Path):
         return None
     # must contain recording, ref_dist, ref_med
     if not ("recording" in obj and ("ref_dist" in obj or "ref_med" in obj)):
-        logging.warning(f"Pickle {pkl_path} missing expected keys (recording/ref_dist/ref_med).")
+        logging.warning(
+            f"Pickle {pkl_path} missing expected keys (recording/ref_dist/ref_med)."
+        )
         return None
     return obj
+
 
 def get_tree_traits(tree_id: str):
     short = species_map_short.get(tree_id.split("_")[0], "Unknown")
@@ -109,7 +188,9 @@ def get_tree_traits(tree_id: str):
         "leaf_type": leaf_type,
     }
 
+
 # --- New TF computation (no distance_scale inside) ---
+
 
 def compute_tf_from_signals(recording, reference, window_size=WINDOW_SIZE):
     """
@@ -123,23 +204,35 @@ def compute_tf_from_signals(recording, reference, window_size=WINDOW_SIZE):
     ref_pf = pyfar.Signal(data=reference.data.T, sampling_rate=reference.samplerate)
 
     # Regularized inversion of the reference spectrum
-    reference_inv = pyfar.dsp.regularized_spectrum_inversion(ref_pf, frequency_range=(20, 19.75e3))
-    ir_deconvolved = rec_pf * reference_inv
+    reference_inv = pyfar.dsp.regularized_spectrum_inversion(
+        ref_pf, frequency_range=(20, 19.75e3)
+    )
+    ir_deconvolved = rec_pf * reference_inv  # in frequency domain
 
     # Window the IR to remove late reflections
     fs = ir_deconvolved.sampling_rate
     win_samples = max(1, int(round(window_size * 1e-3 * fs)))
-    ir_windowed = pyfar.dsp.time_window(ir_deconvolved, (0, win_samples), 'boxcar', unit='samples', crop='window')
-    ir_windowed = pyfar.dsp.pad_zeros(ir_windowed, ir_deconvolved.n_samples - ir_windowed.n_samples)
+    ir_windowed = pyfar.dsp.time_window(
+        ir_deconvolved, (0, win_samples), "boxcar", unit="samples", crop="window"
+    )
+    ir_windowed = pyfar.dsp.pad_zeros(
+        ir_windowed, ir_deconvolved.n_samples - ir_windowed.n_samples
+    )
 
     # Return magnitude TFs as slab.Filter objects (consistent with previous code)
     raw_mag = np.abs(ir_deconvolved.freq)
     win_mag = np.abs(ir_windowed.freq)
-    raw_tf = slab.Filter(data=raw_mag, samplerate=ir_deconvolved.sampling_rate, fir='TF')
-    windowed_tf = slab.Filter(data=win_mag, samplerate=ir_deconvolved.sampling_rate, fir='TF')
+    raw_tf = slab.Filter(
+        data=raw_mag, samplerate=ir_deconvolved.sampling_rate, fir="TF"
+    )
+    windowed_tf = slab.Filter(
+        data=win_mag, samplerate=ir_deconvolved.sampling_rate, fir="TF"
+    )
     return raw_tf, windowed_tf
 
+
 # --- Plotting ---
+
 
 def plot_tf_variant(tf_obj, rec, traits, label, pdf):
     """Plot transfer function in dB vs frequency, with log-binned smoothing and mean lines."""
@@ -185,21 +278,42 @@ def plot_tf_variant(tf_obj, rec, traits, label, pdf):
     # --- plotting ---
     fig, ax = plt.subplots(figsize=(8, 3.5))
     ax.semilogx(freqs, tf_db, alpha=0.4, label="TF (raw)")
-    ax.semilogx(bin_centers, smoothed, color="C1", linewidth=1.5, label="Log-binned mean")
+    ax.semilogx(
+        bin_centers, smoothed, color="C1", linewidth=1.5, label="Log-binned mean"
+    )
 
     # global mean (black solid)
-    ax.axhline(mean_all, color="black", linewidth=1.2, linestyle="-",
-               label=f"Mean all: {mean_all:.1f} dB")
+    ax.axhline(
+        mean_all,
+        color="black",
+        linewidth=1.2,
+        linestyle="-",
+        label=f"Mean all: {mean_all:.1f} dB",
+    )
 
     # low-band mean (<1 kHz)
     if not np.isnan(mean_low):
-        ax.hlines(mean_low, 20, 1000, color="green", linewidth=1.2, linestyle="--",
-                  label=f"<1 kHz mean: {mean_low:.1f} dB")
+        ax.hlines(
+            mean_low,
+            20,
+            1000,
+            color="green",
+            linewidth=1.2,
+            linestyle="--",
+            label=f"<1 kHz mean: {mean_low:.1f} dB",
+        )
 
     # high-band mean (≥1 kHz)
     if not np.isnan(mean_high):
-        ax.hlines(mean_high, 1000, 20000, color="green", linewidth=1.2, linestyle=":",
-                  label=f">=1 kHz mean: {mean_high:.1f} dB")
+        ax.hlines(
+            mean_high,
+            1000,
+            20000,
+            color="green",
+            linewidth=1.2,
+            linestyle=":",
+            label=f">=1 kHz mean: {mean_high:.1f} dB",
+        )
 
     # axes & labels
     ax.set_xlim(20, 20e3)
@@ -214,6 +328,7 @@ def plot_tf_variant(tf_obj, rec, traits, label, pdf):
     pdf.savefig(fig)
     plt.close(fig)
 
+
 def plot_tf_heatmap_variant(all_trees, key, pdf, n_bands=20):
     """
     Build heatmap from windowed TFs computed on-the-fly per tree.
@@ -227,7 +342,7 @@ def plot_tf_heatmap_variant(all_trees, key, pdf, n_bands=20):
         # print(tree_id)
         base_id = tree_id.split("_")[0]
         # skip special short-id folders if you don't want them here
-        #if base_id in {"313", "344", "353"}:
+        # if base_id in {"313", "344", "353"}:
         #    continue
 
         rec = t["data"].get("recording")
@@ -244,7 +359,9 @@ def plot_tf_heatmap_variant(all_trees, key, pdf, n_bands=20):
 
         # compute TFs on the fly
         try:
-            raw_tf, windowed_tf = compute_tf_from_signals(rec, ref_obj, window_size=WINDOW_SIZE)
+            raw_tf, windowed_tf = compute_tf_from_signals(
+                rec, ref_obj, window_size=WINDOW_SIZE
+            )
         except Exception as e:
             logging.warning(f"Failed to compute TF for {tree_id} ({key}): {e}")
             continue
@@ -253,11 +370,13 @@ def plot_tf_heatmap_variant(all_trees, key, pdf, n_bands=20):
         tf_db = 20 * np.log10(np.maximum(mag, 1e-12))
 
         # get freqs from pyfar/slab: windowed_tf.samplerate is sampling rate of TF freq axis
-        freqs = np.linspace(0, (getattr(rec, "samplerate", 48000) / 2.0), num=tf_db.size)
+        freqs = np.linspace(
+            0, (getattr(rec, "samplerate", 48000) / 2.0), num=tf_db.size
+        )
         if freqs[0] == 0:
             freqs, tf_db = freqs[1:], tf_db[1:]
 
-        band_edges = np.logspace(np.log10(20), np.log10(20000), n_bands+1)
+        band_edges = np.logspace(np.log10(20), np.log10(20000), n_bands + 1)
         band_means = []
         for lo, hi in zip(band_edges[:-1], band_edges[1:]):
             mask = (freqs >= lo) & (freqs < hi)
@@ -278,11 +397,11 @@ def plot_tf_heatmap_variant(all_trees, key, pdf, n_bands=20):
     plt.figure(figsize=(12, 6))
     sns.heatmap(
         heatmap_data,
-        xticklabels=[f"{i+1}" for i in range(n_bands)],
+        xticklabels=[f"{i + 1}" for i in range(n_bands)],
         yticklabels=tree_labels,
         cmap="coolwarm",
         center=0,
-        cbar_kws={"label": "Mean attenuation [dB]"}
+        cbar_kws={"label": "Mean attenuation [dB]"},
     )
     plt.xlabel("Frequency band")
     plt.ylabel("Tree")
@@ -291,15 +410,17 @@ def plot_tf_heatmap_variant(all_trees, key, pdf, n_bands=20):
     pdf.savefig()
     plt.close()
 
+
 # --- Main ---
+
 
 def main():
     all_trees = []
     for tree_dir in get_tree_dirs(DATA_DIR):
         tree_id = tree_dir.name
         # print(tree_dir)
-        if tree_id in ['313', '344', '353']:
-            print('skipping', tree_id)
+        if tree_id in ["313", "344", "353"]:
+            print("skipping", tree_id)
             continue
         tree_data = load_tree_pkl(tree_dir)
         if tree_data is None:
@@ -316,7 +437,9 @@ def main():
             if rec is None or ref is None:
                 continue
             try:
-                raw_tf, windowed_tf = compute_tf_from_signals(rec, ref, window_size=WINDOW_SIZE)
+                raw_tf, windowed_tf = compute_tf_from_signals(
+                    rec, ref, window_size=WINDOW_SIZE
+                )
             except Exception as e:
                 logging.warning(f"TF compute failed for {t['tree_id']} (dist): {e}")
                 continue
@@ -330,7 +453,9 @@ def main():
             if rec is None or ref is None:
                 continue
             try:
-                raw_tf, windowed_tf = compute_tf_from_signals(rec, ref, window_size=WINDOW_SIZE)
+                raw_tf, windowed_tf = compute_tf_from_signals(
+                    rec, ref, window_size=WINDOW_SIZE
+                )
             except Exception as e:
                 logging.warning(f"TF compute failed for {t['tree_id']} (med): {e}")
                 continue
@@ -343,6 +468,7 @@ def main():
         plot_tf_heatmap_variant(all_trees, "med", pdf)
 
     print("Analysis completed.")
+
 
 if __name__ == "__main__":
     main()

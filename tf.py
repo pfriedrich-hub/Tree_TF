@@ -1,103 +1,111 @@
 """
-Obtain the transfer function of a tree by deconvolving a recording with its reference.
-Plots the transformation from the raw signal to the tranfer function for an example tree.
+Compute and visualize the transfer function of a tree by deconvolving a recording
+with its reference. Produces a single 3-panel figure using only Pyfar plotting functions.
 """
+
 from pathlib import Path
 from matplotlib import pyplot as plt
 import pyfar as pf
 import slab
-data_dir = Path.cwd() / 'data'
 
-# specify file names
-recording_name = '353_8.1_255W'
-reference_name = '353_8.1_255W_ref'
-window_size=120
-show=True
+# === Paths and parameters ===
+data_dir = Path.cwd() / "data"
+recording_name = "353_8.1_255W"
+reference_name = "353_8.1_255W_ref"
+window_size = 120
+show = True
 
-# load recording and reference signal as slab.Sound object:
-recording = slab.Sound.read(data_dir / recording_name / f'{recording_name}_rec.wav')
-reference = slab.Sound.read(data_dir / reference_name / f'{reference_name}.wav')
+# === Load recording and reference signals ===
+recording = slab.Sound.read(data_dir / recording_name / f"{recording_name}_rec.wav")
+reference = slab.Sound.read(data_dir / reference_name / f"{reference_name}.wav")
+
 
 def compute_tf(recording, reference, window_size, show):
     """
-    Compute the Transfer Function of the system.
-    :param recording: the raw recording of from the system (tree)
-    :param reference: the reference recording to be removed from the recording (no tree)
-    :param window_size: the window to apply to the impulse response to remove late reflections
-    :param show: whether to plot the resulting tf
-    :return: tf - the resulting transfer function
+    Compute the transfer function and plot a 3-panel summary (Pyfar-only).
     """
-    # convert to pyfar.Signal object:
-    reference = pf.Signal(data=reference.data.T, sampling_rate=reference.samplerate)
-    recording = pf.Signal(recording.data.T, sampling_rate=recording.samplerate)
-    # I
-    # Obtain the raw TF by means of deconvolution, i.e., H = Y / X
-    # Where H is the TF (complex spectrum), Y the signal recorded behind the tree, and X the reference signal.
-    # Note that regularized inversion is often used to compute the inverse 1/X.
-    # Deconvolve the recording with reference (multiply by inverse) to obtain the TF:
-    reference_inverted = pf.dsp.regularized_spectrum_inversion(reference, frequency_range=(20, 19.75e3))
-    ir_deconvolved = recording * reference_inverted  # convolution in time domain = multiplication in frequency domain
-    # The resulting filter can be viewed in the frequency domain as a transfer function (TF, bottom)
-    # and in the time domain as an impulse response (IR, top):
-    if show:
-        plt.figure()
-        ax = pf.plot.time_freq(ir_deconvolved, unit='samples')
-        ax[0].set_xlim(0, 1e3)
-        ax[0].set_title('raw tf as IR in time domain and TF in frequency domain')
-        ax[1].set_ylim(-40, 20)
-    # II
-    # Acoustic measurements usually contain reflections from the measurement equipment itself
-    # (other loudspeakers, supporting construction, etc.) or from the environment (other trees, floor, etc.).
-    # Reflections show up in the impulse response as peaks that follow the direct sound. In the spectrum they cause a
-    # ripple (comb-filter) effect.
-    # Window (shorten) the IR and find a window that is as long as possible to maintain the frequency response at low
-    # frequencies, and  short enough to discard the reflection(s). Plot your result to see the effect of the time window.
-    # apply time window to the IR:
-    ir_windowed = pf.dsp.time_window(ir_deconvolved, (0, window_size), 'boxcar', unit='samples', crop='window')
-    # pad to original length for plotting and further processing:
-    ir_windowed = pf.dsp.pad_zeros(ir_windowed, ir_deconvolved.n_samples-ir_windowed.n_samples)
-    if show:
-        plt.figure()
-        ax = pf.plot.freq(ir_windowed)
-        ax.set_xlim(0, 2.1e4)
-        ax.set_ylim(-40, 20)
-        plt.title('windowed tf')
+    # Convert to pyfar.Signal
+    reference = pf.Signal(reference.data.T, reference.samplerate)  # = reference
+    recording = pf.Signal(recording.data.T, recording.samplerate)  # = ir_recorded
+
+    # Deconvolution (H = Y / X)
+    reference_inverted = pf.dsp.regularized_spectrum_inversion(
+        reference, frequency_range=(20, 19.75e3)
+    )
+    ir_deconvolved = recording * reference_inverted
+
+    # Apply time window to remove reflections
+    ir_windowed = pf.dsp.time_window(
+        ir_deconvolved, (0, window_size), "boxcar", unit="samples", crop="window"
+    )
+    ir_windowed = pf.dsp.pad_zeros(
+        ir_windowed, ir_deconvolved.n_samples - ir_windowed.n_samples
+    )
+
+    # === Create 3-panel Pyfar figure ===
     if show:
         fig, axs = plt.subplots(3, 1, figsize=(12, 10))
 
-        # 1. Raw recording
-        time_axis = recording.times
-        axs[0].plot(time_axis, recording.time[0])
-        axs[0].set_title('Raw Recording (Time Domain)')
-        axs[0].set_xlabel('Time [s]')
-        axs[0].set_ylabel('Amplitude')
-        axs[0].set_xlim(0, time_axis[-1])
+        # --- Panel 1: Raw recording (time domain)
+        pf.plot.time(recording, ax=axs[0])
+        axs[0].set_title("Raw Recording (Time Domain)")
+        axs[0].set_xlabel("Time [s]")
+        axs[0].set_ylabel("Amplitude")
+        axs[0].set_xlim(0, recording.times[-1])
 
-        # 2. Impulse responses
-        ir_time = ir_deconvolved.times
-        axs[1].plot(ir_time, ir_deconvolved.time[0], label='Raw IR')
-        axs[1].plot(ir_time, ir_windowed.time[0], label='Windowed IR', linestyle='--')
-        axs[1].set_title('Impulse Response (Raw and Windowed)')
-        axs[1].set_xlabel('Time [s]')
-        axs[1].set_ylabel('Amplitude')
-        axs[1].legend()
-        axs[1].set_xlim(0, 0.05)
+        # --- Panel 2: Impulse responses (raw + windowed, in samples)
+        pf.plot.time(ir_deconvolved, unit="samples", ax=axs[1])
+        pf.plot.time(ir_windowed, unit="samples", ax=axs[1], linestyle="--")
+        axs[1].set_title("Impulse Responses (Raw and Windowed, unit: samples)")
+        axs[1].set_xlabel("Samples")
+        axs[1].set_ylabel("Amplitude")
+        axs[1].legend(["Raw IR", "Windowed IR"])
+        axs[1].set_xlim(0, 1000)  # adjust if needed
 
-        # 3. Transfer functions (frequency domain) using pyfar's freq plot
-        ax3 = axs[2]
-        pf.plot.freq(ir_deconvolved, ax=ax3)
-        pf.plot.freq(ir_windowed, ax=ax3, linestyle='--')
-        ax3.set_title('Transfer Function (Raw and Windowed)')
-        ax3.legend(['Raw TF', 'Windowed TF'])
-        ax3.set_xlim(20, 20000)
-        ax3.set_ylim(-40, 20)
+        # --- Panel 3: Transfer functions (raw + windowed)
+        pf.plot.freq(ir_deconvolved, ax=axs[2])
+        pf.plot.freq(ir_windowed, ax=axs[2], linestyle="--")
+        axs[2].set_title("Transfer Functions (Raw and Windowed)")
+        axs[2].set_xlim(20, 20000)
+        axs[2].set_ylim(-40, 20)
+        axs[2].legend(["Raw TF", "Windowed TF"])
 
         plt.tight_layout()
-        output_path = Path.cwd() / f"{recording_name}_tf_summary.png"
-        plt.savefig(output_path, dpi=300)
-        print(f"✅ Summary figure saved to: {output_path}")
+        output_path = Path.cwd() / f"{recording_name}_tf_summary_pyfar.png"
+        fig.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        print(f"✅ 3-panel figure saved to: {output_path}")
+        # === Create second figure: Pyfar time-frequency comparison ===
+    if show:
+        fig_tf, ax_tf = plt.subplots(2, 1, figsize=(10, 6))
 
-    # todo see which time window works
-    # think about reflections in the arboretum
-compute_tf(recording, reference, window_size, show)
-plt.show()
+        # Plot raw IR before windowing
+        ax = pf.plot.time_freq(
+            ir_deconvolved,
+            unit="samples",
+            dB_time=True,
+            label="Before Windowing",
+            ax=ax_tf,
+        )
+        # Plot windowed IR
+        pf.plot.time_freq(
+            ir_windowed, unit="samples", dB_time=True, label="After Windowing", ax=ax_tf
+        )
+
+        # Customize axes
+        ax[0].set_xlim(0, 1e3)  # samples axis limit
+        ax[1].set_ylim(-40, 20)  # dB axis limit
+        ax[1].legend(loc="lower left")
+
+        plt.tight_layout()
+        tf_output_path = Path.cwd() / f"{recording_name}_timefreq_comparison.png"
+        fig_tf.savefig(tf_output_path, dpi=300, bbox_inches="tight")
+        plt.close(fig_tf)
+        print(f"✅ Time-frequency comparison figure saved to: {tf_output_path}")
+
+    return ir_deconvolved, ir_windowed
+
+
+# === Run computation ===
+ir_deconvolved, ir_windowed = compute_tf(recording, reference, window_size, show)
+print("✅ Processing complete.")
