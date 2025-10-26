@@ -49,8 +49,15 @@ TODO:
                 - the IR is the pattern that defines how all frequencies interact in time
                 - The tree’s IR shows the timing and strength of acoustic interactions (direct path, leaf scattering, trunk reflection).
                 - The tree’s transfer function (FFT of IR) shows which frequencies are transmitted, absorbed, or cancelled due to those interactions.
-            - find optimal hspace and wspace
+                ! automatize finding the window length based on window_grid function but in a new function
+                ! tradeoff between accuracy in low frequencies and 'noise'/high variability in high frequencies
+                ! optimize window length between 1-30ms, optimize according to low/high frequencies in TF
+                - is it reasonable to use the full IR for the lower frequencies and the windowed for the TF of the higher frequencies or a dynamic window length,
+                so that each frequency bin's amplitude is taken from a similar neighbourhood of frequencies?
+                multiresolution approach? long window + smoothing at higher frequencies?
+                - infer an uncertainty metric for the chosen window length per tree
             - implement and check optimization code (chatty)
+            - implement correct specs of the speaker
             - push to git
     2. fix reference scaling/ampification of low frequencies:
         - research: ISO-implementation-code
@@ -60,13 +67,24 @@ TODO:
         - root mean square (RMS) instead of median scaling
         - annotate real frequencies in bands on x-axis
         - octave scaling instead of logarithmic
+    4. summary;
+        - TLS per tree from CloudCompare (just a picture) with important information:
+            - uncertainty of window length
+            - mean attenuation
+            - frequency range of highest attenuation
+            - sound of each tree (play the same sound with the tree filter...or before tree and after tree? the same sweep?)
+        - print this summary
     4. TLS-Scans:
-        - important information of every tree
-        - printed
+        - structural/architectonical traits of every tree
+        - which parameters are most relevant for acoustics?
+        - add parameters from extra data Arboretum
+        - try to estimate a pore-size per tree?
     5. model absorption potential predicted by tree traits -> look into satellite data and find silent places from tree traits
     6. write protocol:
         - motivation to think on my own because of low frequency of intense meetings
         - possibility to apply tools in a free and self-responsible way: best experience of the whole masters program
+        - exploring things at my preferred tempo without the need to proof anything to anyone was an experience that i really needed
+    7. look with Paul at window selection plots (tf_window_exploration)
 """
 
 import pickle
@@ -76,6 +94,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+from scipy.stats import pearsonr
 import seaborn as sns
 import pyfar
 import slab
@@ -596,12 +615,21 @@ def plot_tf_heatmap_variant(all_trees, key, pdf, n_bands=20):
     plt.close()
 
 
-def create_tf_window_grid(t, window_sizes_samples, offsets_samples, freq_range):
+def create_tf_window_grid(
+    t, window_sizes_samples, offset_samples, freq_range, pre_offset_samples=100
+):
     """
-    Create a grid of time–frequency comparison plots (before vs after windowing)
-    for one tree. Each grid cell shows two independent subplots:
-      • top: time-domain (samples)
-      • bottom: frequency-domain (Hz, log-scaled)
+    Create a column of time–frequency comparison plots (before vs after windowing)
+    for one tree.
+    Adds an extra plot where the window extends from 0 to onset+window_length.
+    Adds a fixed margin before the onset index for all other windows.
+
+    Parameters:
+        t: dict with tree data ('recording', 'ref_dist' or 'ref_med', etc.)
+        window_sizes_samples: list of window lengths in samples
+        offset_samples: not used here but kept for compatibility
+        freq_range: tuple with speaker frequency range
+        pre_offset_samples: number of samples to show before onset in windowed IR
     """
 
     rec = t["data"].get("recording")
@@ -632,101 +660,960 @@ def create_tf_window_grid(t, window_sizes_samples, offsets_samples, freq_range):
         print(f"⚠️ Deconvolution failed for {t['tree_id']}: {e}")
         return None
 
-    # --- Figure grid (wider layout) ---
-    n_rows = len(offsets_samples)
-    n_cols = len(window_sizes_samples)
-    fig, axes_grid = plt.subplots(
-        n_rows, n_cols, figsize=(6 * n_cols, 3.5 * n_rows), squeeze=False
-    )
+    # --- Detect onset in first 5000 samples ---
+    ir_arr = np.ravel(ir_deconvolved.time)
+    abs_ir = np.abs(ir_arr)
+    search_window = min(5000, len(abs_ir))
+    onset_idx = int(np.argmax(abs_ir[:search_window]))
+    print(f"Detected onset: {onset_idx} samples ({onset_idx / fs * 1000:.2f} ms)")
 
-    for i, offset_samples in enumerate(offsets_samples):
-        for j, win_samples in enumerate(window_sizes_samples):
-            ax_parent = axes_grid[i, j]
+    # --- Setup figure ---
+    n_rows = len(window_sizes_samples)
+    fig, axes_grid = plt.subplots(n_rows, 1, figsize=(8, 3.8 * n_rows), squeeze=False)
 
-            # --- Create nested 2-row subplots (no shared axes!) ---
-            gs = ax_parent.get_subplotspec().subgridspec(2, 1, hspace=0.35)
-            ax_time = fig.add_subplot(gs[0])
-            ax_freq = fig.add_subplot(gs[1])
-            ax_parent.set_visible(False)
+    for i, win_samples in enumerate(window_sizes_samples):
+        ax_parent = axes_grid[i, 0]
+        gs = ax_parent.get_subplotspec().subgridspec(2, 1, hspace=0.6)
+        ax_time = fig.add_subplot(gs[0])
+        ax_freq = fig.add_subplot(gs[1])
+        ax_parent.set_visible(False)
 
-            # --- Apply window ---
-            start_samp = int(offset_samples)
-            end_samp = int(offset_samples + win_samples)
+        # --- Apply window: start at 0, extend to offset + window_size ---
+        start_samp = 0
+        end_samp = int(start_samp + onset_idx + win_samples)
+        win_label = f"0 → offset+{win_samples} samples"
 
-            try:
-                # ir_windowed = pyfar.dsp.time_window(
-                #     ir_deconvolved,
-                #     (start_samp, end_samp),
-                #     "boxcar",
-                #     unit="samples",
-                #     crop="window",
-                # )
-                ir_windowed = pyfar.dsp.time_window(
-                    ir_deconvolved,
-                    (start_samp, end_samp),
-                    "boxcar",
-                    unit="samples",
-                    crop="none",  # keep full signal length, preserve offset
-                )
-            except Exception as e:
-                print(
-                    f"⚠️ Window failed for {t['tree_id']} ({offset_samples},{win_samples}): {e}"
-                )
-                continue
-
-            # --- Time–frequency plots ---
-            axes_tf = [ax_time, ax_freq]
-            pyfar.plot.time_freq(
+        try:
+            ir_windowed = pyfar.dsp.time_window(
                 ir_deconvolved,
+                (start_samp, end_samp),
+                "boxcar",
                 unit="samples",
-                dB_time=True,
-                label="Before Windowing",
-                ax=axes_tf,
+                crop="none",
             )
-            pyfar.plot.time_freq(
-                ir_windowed,
-                unit="samples",
-                dB_time=True,
-                label="After Windowing",
-                ax=axes_tf,
-            )
+        except Exception as e:
+            print(f"⚠️ Window failed for {t['tree_id']} ({win_label}): {e}")
+            continue
 
-            # --- Customize axes ---
-            ax_time.set_xlim(left=0)
-            ax_freq.set_ylim(-40, 50)
-            ax_freq.legend(loc="lower left", fontsize=7)
+        # --- Time–frequency plots ---
+        pyfar.plot.time_freq(
+            ir_deconvolved,
+            unit="samples",
+            dB_time=True,
+            label="Before Windowing",
+            ax=[ax_time, ax_freq],
+        )
+        pyfar.plot.time_freq(
+            ir_windowed,
+            unit="samples",
+            dB_time=True,
+            label="After Windowing",
+            ax=[ax_time, ax_freq],
+        )
 
-            # --- Speaker band markers ---
-            ax_freq.axvline(freq_range[0], color="green", ls="--", lw=2)
-            ax_freq.axvline(freq_range[1], color="green", ls="--", lw=2)
-            ax_freq.text(
-                freq_range[0],
-                0,
-                f"{freq_range[0]} Hz",
-                color="green",
-                fontsize=7,
-                va="bottom",
-                ha="left",
-            )
-            ax_freq.text(
-                freq_range[1],
-                20,
-                f"{freq_range[1] / 1000:.1f} kHz",
-                color="green",
-                fontsize=7,
-                va="bottom",
-                ha="right",
-            )
+        # --- Axis styling ---
+        ax_time.set_xlim(0, len(ir_deconvolved.time[0]))
+        ax_freq.set_ylim(-40, 50)
+        ax_freq.legend(loc="lower left", fontsize=7)
+        ax_freq.axvline(freq_range[0], color="green", ls="--", lw=2)
+        ax_freq.axvline(freq_range[1], color="green", ls="--", lw=2)
 
-            ax_time.set_title(
-                f"{offset_samples} ms offset | {win_samples} ms window", fontsize=8
+        # --- Titles ---
+        if i == len(window_sizes_samples) - 1:
+            title_text = f"Window: {win_label} (full IR visible)"
+        else:
+            win_ms = win_samples / fs * 1000
+            freq_res = fs / win_samples
+            title_text = (
+                f"Window: {win_label} ({win_ms:.1f} ms) | Δf ≈ {freq_res:.1f} Hz"
             )
+        ax_time.set_title(title_text, fontsize=9)
 
     fig.suptitle(
-        f"Tree {t['tree_id']} ({t['species_short']}) — TF window sweep", fontsize=10
+        f"Tree {t['tree_id']} ({t['species_short']}) — TF window sweep",
+        fontsize=11,
     )
-    fig.subplots_adjust(wspace=0.55, hspace=0.3)
-    # fig.tight_layout(rect=[0, 0, 1, 0.97])
+    fig.subplots_adjust(wspace=0, hspace=0.3)
+    return fig
+
+
+def find_optimal_window_length(
+    t,
+    freq_range=(100, 19000),
+    alpha=0.3,
+):
+    """
+    Automatically find the optimal window length (in samples) per tree
+    by balancing spectral fidelity (correlation to full IR) and
+    high-frequency smoothness.
+
+    Parameters
+    ----------
+    t : dict
+        Tree dictionary with entries 'data' -> {'recording', 'ref_dist' or 'ref_med'}
+    freq_range : tuple
+        Frequency range (Hz) to evaluate the TF.
+    alpha : float
+        Weighting factor for penalizing high-frequency variability.
+
+    Returns
+    -------
+    result : dict
+        Includes best window info, uncertainty, diagnostics, and signals.
+    """
+
+    rec = t["data"].get("recording")
+    ref = t["data"].get("ref_dist") or t["data"].get("ref_med")
+    if rec is None or ref is None:
+        print(f"⚠️ Missing recording or reference for {t['tree_id']}")
+        return None
+
+    # --- Trim both signals ---
+    rec_trimmed, start_idx = auto_trim_signal(
+        rec, threshold_rel=2e-2, safety_margin_ms=0.0, return_index=True
+    )
+    ref_data = np.asarray(ref.data)
+    ref_trimmed_data = (
+        ref_data[start_idx:] if ref_data.ndim == 1 else ref_data[start_idx:, :]
+    )
+    ref_trimmed = slab.Sound(data=ref_trimmed_data, samplerate=ref.samplerate)
+
+    fs = getattr(rec_trimmed, "samplerate", 48000)
+    rec_pf = pyfar.Signal(rec_trimmed.data.T, fs)
+    ref_pf = pyfar.Signal(ref_trimmed.data.T, fs)
+
+    # --- Deconvolution ---
+    try:
+        ref_inv = pyfar.dsp.regularized_spectrum_inversion(
+            ref_pf, frequency_range=(20, 19.75e3)
+        )
+        ir_deconvolved = rec_pf * ref_inv
+    except Exception as e:
+        print(f"⚠️ Deconvolution failed for {t['tree_id']}: {e}")
+        return None
+
+    # --- Detect onset ---
+    ir_arr = np.ravel(ir_deconvolved.time)
+    abs_ir = np.abs(ir_arr)
+    search_window = min(5000, len(abs_ir))
+    onset_idx = int(np.argmax(abs_ir[:search_window]))
+
+    # --- Candidate window lengths: 0.5–2 ms in samples ---
+    window_lengths_samples = np.arange(
+        int(fs * 0.0005), int(fs * 0.002) + 1, int(fs * 0.001)
+    )
+    ###### ✅ LOG-BINNED SMOOTHING (for full IR)
+    # --- Compute magnitude TF for full IR ---
+    full_tf_db = 20 * np.log10(np.abs(ir_deconvolved.freq).flatten() + 1e-12)
+    freqs = np.linspace(0, fs / 2, len(full_tf_db))
+    valid_mask = (freqs >= freq_range[0]) & (freqs <= freq_range[1])
+    freqs_valid = freqs[valid_mask]
+    tf_valid = full_tf_db[valid_mask]
+
+    # --- Log-binned smoothing ---
+    n_log_bins = 200
+    log_edges = np.logspace(
+        np.log10(freqs_valid[0]), np.log10(freqs_valid[-1]), n_log_bins + 1
+    )
+    smoothed_full, bin_centers = [], []
+    for lo, hi in zip(log_edges[:-1], log_edges[1:]):
+        mask = (freqs_valid >= lo) & (freqs_valid < hi)
+        if not np.any(mask):
+            continue
+        smoothed_full.append(np.mean(tf_valid[mask]))
+        bin_centers.append(np.sqrt(lo * hi))  # geometric mean = log midpoint
+    smoothed_full = np.array(smoothed_full)
+    bin_centers = np.array(bin_centers)
+    smoothed_full -= np.mean(smoothed_full)
+
+    # --- Lists for diagnostics ---
+    r_low_arr, r_high_arr, var_high_arr, score_arr = [], [], [], []
+
+    for win_samples in window_lengths_samples:
+        start_samp = 0
+        end_samp = int(onset_idx + win_samples)
+
+        try:
+            ir_windowed = pyfar.dsp.time_window(
+                ir_deconvolved,
+                (start_samp, end_samp),
+                "boxcar",
+                unit="samples",
+                crop="none",
+            )
+        except Exception as e:
+            print(f"⚠️ Window failed for {t['tree_id']} ({win_samples} samples): {e}")
+            continue
+
+        # --- Windowed TF ---
+        win_tf_db = 20 * np.log10(np.abs(ir_windowed.freq).flatten() + 1e-12)
+        win_tf_valid = win_tf_db[valid_mask]
+
+        # --- Log-binned smoothing (same bins as full TF) ---
+        smoothed_win = []
+        for lo, hi in zip(log_edges[:-1], log_edges[1:]):
+            mask = (freqs_valid >= lo) & (freqs_valid < hi)
+            if not np.any(mask):
+                continue
+            smoothed_win.append(np.mean(win_tf_valid[mask]))
+        smoothed_win = np.array(smoothed_win)
+        smoothed_win -= np.mean(smoothed_win)
+
+        # --- Split low/high frequencies ---
+        split_idx = len(smoothed_full) // 2
+        win_low, win_high = smoothed_win[:split_idx], smoothed_win[split_idx:]
+        full_low, full_high = smoothed_full[:split_idx], smoothed_full[split_idx:]
+
+        # --- Correlations ---
+        r_low = (
+            pearsonr(full_low, win_low)[0] if np.all(np.isfinite(win_low)) else np.nan
+        )
+        r_high = (
+            pearsonr(full_high, win_high)[0]
+            if np.all(np.isfinite(win_high))
+            else np.nan
+        )
+
+        # --- High-frequency variance (consistently log-binned) ---
+        var_high = (
+            np.var(win_high - np.mean(win_high))
+            if np.all(np.isfinite(win_high))
+            else np.nan
+        )
+
+        # --- Store diagnostics ---
+        r_low_arr.append(r_low)
+        r_high_arr.append(r_high)
+        var_high_arr.append(var_high)
+        # (score_arr will be computed later as before)
+
+        # --- Combined score ---
+        r_combined = np.nanmean(
+            [r_low, r_high]
+        )  # more weight on correlation to high frequencies?
+        score_arr.append(r_combined - alpha * var_high)
+
+    r_low_arr = np.array(r_low_arr)
+    r_high_arr = np.array(r_high_arr)
+    var_high_arr = np.array(var_high_arr)
+    score_arr = np.array(score_arr)
+
+    # --- Choose best window ---
+    best_idx = np.nanargmax(score_arr)
+    best_win = window_lengths_samples[best_idx]
+    uncertainty = 1 - np.nanmean([r_low_arr[best_idx], r_high_arr[best_idx]])
+
+    # --- Best IR ---
+    ir_best = pyfar.dsp.time_window(
+        ir_deconvolved,
+        (0, int(onset_idx + best_win)),
+        "boxcar",
+        unit="samples",
+        crop="none",
+    )
+
+    result = {
+        "tree_id": t["tree_id"],
+        "fs": fs,
+        "best_window_samples": int(best_win),
+        "best_window_ms": best_win / fs * 1000,
+        "best_score": float(score_arr[best_idx]),
+        "uncertainty": float(uncertainty),
+        "diagnostics": {
+            "window_lengths": window_lengths_samples,
+            "r_low_log": r_low_arr,
+            "r_high_log": r_high_arr,
+            "var_highfreq": var_high_arr,
+            "score": score_arr,
+        },
+        "signals": {
+            "ir_full": ir_deconvolved,
+            "ir_best": ir_best,
+            "ir_smoothed": smoothed_full,
+            "log_freqs": bin_centers,
+        },
+    }
+
+    print(
+        f"✅ Tree {t['tree_id']}: best window = {best_win} samples "
+        f"({best_win / fs * 1000:.2f} ms), uncertainty = {uncertainty:.3f}"
+    )
+
+    return result
+
+
+def find_optimal_window_length_old(
+    t,
+    freq_range=(100, 19000),
+    alpha=0.5,
+    low_cutoff_hz=2000.0,
+):
+    """
+    Find optimal window length (samples) per tree.
+
+    Improvements over prior version:
+      - compute r_allfreq and r_low (low-frequency correlation)
+      - compute var_high (HF std)
+      - normalize var_high across the tested windows before combining
+      - score = r_low - alpha * var_high_norm
+      - uncertainty = 1 - r_all_best (global-frequency uncertainty)
+
+    Returns the same result dict shape as before, but with extra diagnostics:
+      'r_low', 'r_all', 'var_high', 'var_high_norm', 'score'
+    """
+    rec = t["data"].get("recording")
+    ref = t["data"].get("ref_dist") or t["data"].get("ref_med")
+    if rec is None or ref is None:
+        print(f"⚠️ Missing recording or reference for {t.get('tree_id', '?')}")
+        return None
+
+    # --- Trim both signals ---
+    rec_trimmed, start_idx = auto_trim_signal(
+        rec, threshold_rel=2e-2, safety_margin_ms=0.0, return_index=True
+    )
+    ref_data = np.asarray(ref.data)
+    ref_trimmed_data = (
+        ref_data[start_idx:] if ref_data.ndim == 1 else ref_data[start_idx:, :]
+    )
+    ref_trimmed = slab.Sound(data=ref_trimmed_data, samplerate=ref.samplerate)
+
+    fs = getattr(rec_trimmed, "samplerate", 48000)
+    rec_pf = pyfar.Signal(rec_trimmed.data.T, fs)
+    ref_pf = pyfar.Signal(ref_trimmed.data.T, fs)
+
+    # --- Deconvolution ---
+    try:
+        ref_inv = pyfar.dsp.regularized_spectrum_inversion(
+            ref_pf, frequency_range=(20, 19.75e3)
+        )
+        ir_deconvolved = rec_pf * ref_inv
+    except Exception as e:
+        print(f"⚠️ Deconvolution failed for {t.get('tree_id', '?')}: {e}")
+        return None
+
+    # --- Detect onset ---
+    ir_arr = np.ravel(ir_deconvolved.time)
+    abs_ir = np.abs(ir_arr)
+    search_window = min(5000, len(abs_ir))
+    onset_idx = int(np.argmax(abs_ir[:search_window]))
+    print(f"Detected onset: {onset_idx} samples ({onset_idx / fs * 1000:.2f} ms)")
+
+    # --- Candidate window lengths: 1–30 ms in samples (step 1 ms) ---
+    ms_step_samples = max(1, int(round(0.001 * fs)))
+    min_samples = int(round(0.001 * fs))
+    max_samples = int(round(0.030 * fs))
+    window_lengths_samples = np.arange(
+        min_samples, max_samples + 1, ms_step_samples, dtype=int
+    )
+
+    # --- Full TF magnitude (consistent with compute_tf_from_signals) ---
+    try:
+        full_mag = np.abs(ir_deconvolved.freq)
+    except Exception as e:
+        print(f"⚠️ Couldn't access full TF magnitudes for {t.get('tree_id', '?')}: {e}")
+        return None
+    full_mag = np.asarray(full_mag).squeeze()
+    if full_mag.ndim > 1:
+        full_mag = np.mean(full_mag, axis=1)
+    full_tf_db = 20.0 * np.log10(np.maximum(full_mag, 1e-12))
+
+    # frequency axis (bins)
+    n_bins = full_tf_db.shape[0]
+    freqs = np.linspace(0.0, fs / 2.0, n_bins)
+
+    valid_mask = (freqs >= freq_range[0]) & (freqs <= freq_range[1])
+    if valid_mask.sum() == 0:
+        print(
+            f"⚠️ No frequency bins in freq_range {freq_range} for {t.get('tree_id', '?')}"
+        )
+        return None
+    full_tf_valid = full_tf_db[valid_mask]
+
+    # low/high masks (for focused metrics)
+    low_mask = freqs <= low_cutoff_hz
+    # ensure we intersect with overall valid_mask when computing r_low
+    low_mask_valid = valid_mask & low_mask
+    high_mask = freqs > ((freq_range[0] + freq_range[1]) / 2.0)
+    high_mask_valid = valid_mask & high_mask
+
+    # diagnostics arrays
+    r_all_arr = []
+    r_low_arr = []
+    var_high_arr = []
+    score_arr = []
+
+    for win_samples in window_lengths_samples:
+        start_samp = 0
+        end_samp = int(onset_idx + win_samples)
+
+        try:
+            ir_windowed = pyfar.dsp.time_window(
+                ir_deconvolved,
+                (start_samp, end_samp),
+                "boxcar",
+                unit="samples",
+                crop="none",
+            )
+        except Exception as e:
+            # keep NaNs for failed windows
+            r_all_arr.append(np.nan)
+            r_low_arr.append(np.nan)
+            var_high_arr.append(np.nan)
+            score_arr.append(np.nan)
+            continue
+
+        # TF magnitude for windowed IR
+        try:
+            win_mag = np.abs(ir_windowed.freq).squeeze()
+            if win_mag.ndim > 1:
+                win_mag = np.mean(win_mag, axis=1)
+            win_tf_db = 20.0 * np.log10(np.maximum(win_mag, 1e-12))
+        except Exception as e:
+            r_all_arr.append(np.nan)
+            r_low_arr.append(np.nan)
+            var_high_arr.append(np.nan)
+            score_arr.append(np.nan)
+            continue
+
+        # valid portions
+        win_tf_valid = win_tf_db[valid_mask]
+
+        # global correlation (all frequencies in valid_mask)
+        if np.all(np.isfinite(win_tf_valid)) and np.all(np.isfinite(full_tf_valid)):
+            try:
+                r_all, _ = pearsonr(full_tf_valid, win_tf_valid)
+            except Exception:
+                r_all = np.nan
+        else:
+            r_all = np.nan
+        r_all_arr.append(r_all)
+
+        # low-frequency correlation (focus on preserving LF content)
+        if (
+            low_mask_valid.sum() > 1
+            and np.all(np.isfinite(full_tf_db[low_mask_valid]))
+            and np.all(np.isfinite(win_tf_db[low_mask_valid]))
+        ):
+            try:
+                r_low, _ = pearsonr(
+                    full_tf_db[low_mask_valid], win_tf_db[low_mask_valid]
+                )
+            except Exception:
+                r_low = np.nan
+        else:
+            r_low = np.nan
+        r_low_arr.append(r_low)
+
+        # high-frequency variability (noise/wiggliness) measured as std in HF band
+        if high_mask_valid.sum() > 0:
+            var_h = float(np.nanstd(win_tf_db[high_mask_valid]))
+        else:
+            var_h = np.nan
+        var_high_arr.append(var_h)
+
+        # placeholder for score; will normalize var_high after loop
+        score_arr.append(np.nan)
+
+    r_all_arr = np.array(r_all_arr, dtype=float)
+    r_low_arr = np.array(r_low_arr, dtype=float)
+    var_high_arr = np.array(var_high_arr, dtype=float)
+
+    # Normalize var_high to [0,1] across valid windows (lower -> better)
+    finite_var = var_high_arr[np.isfinite(var_high_arr)]
+    if finite_var.size == 0:
+        var_high_norm = np.full_like(var_high_arr, np.nan)
+    else:
+        vmin = finite_var.min()
+        vmax = finite_var.max()
+        denom = vmax - vmin if vmax > vmin else 1.0
+        var_high_norm = (var_high_arr - vmin) / denom
+        # clip to [0,1]
+        var_high_norm = np.clip(var_high_norm, 0.0, 1.0)
+
+    # Compose score: maximize r_low while minimizing normalized HF variability
+    # score = r_low - alpha * var_high_norm
+    score_arr = np.where(np.isfinite(r_low_arr), r_low_arr, -np.inf) - alpha * np.where(
+        np.isfinite(var_high_norm), var_high_norm, 1.0
+    )
+
+    # Pick best window
+    safe_scores = np.where(np.isfinite(score_arr), score_arr, -np.inf)
+    if np.all(~np.isfinite(safe_scores)):
+        print(f"⚠️ No valid scores for {t.get('tree_id', '?')}")
+        return None
+    best_idx = int(np.nanargmax(safe_scores))
+    best_win = int(window_lengths_samples[best_idx])
+
+    best_r_all = (
+        float(r_all_arr[best_idx]) if np.isfinite(r_all_arr[best_idx]) else np.nan
+    )
+    uncertainty = float(1.0 - best_r_all) if np.isfinite(best_r_all) else np.nan
+
+    # Best IR windowed signal
+    ir_best = pyfar.dsp.time_window(
+        ir_deconvolved,
+        (0, int(onset_idx + best_win)),
+        "boxcar",
+        unit="samples",
+        crop="none",
+    )
+
+    result = {
+        "tree_id": t.get("tree_id", None),
+        "fs": fs,
+        "onset_idx": onset_idx,
+        "best_window_samples": int(best_win),
+        "best_window_ms": best_win / fs * 1000.0,
+        "best_score": float(safe_scores[best_idx]),
+        "uncertainty": float(uncertainty),
+        "diagnostics": {
+            "window_lengths": window_lengths_samples,
+            "r_allfreq": r_all_arr,
+            "r_low": r_low_arr,
+            "var_highfreq": var_high_arr,
+            "var_high_norm": var_high_norm,
+            "score": score_arr,
+            "freqs": freqs,
+            "valid_mask": valid_mask,
+        },
+        "signals": {
+            "ir_full": ir_deconvolved,
+            "ir_best": ir_best,
+        },
+    }
+
+    print(
+        f"✅ Tree {t.get('tree_id', '?')}: best window = {best_win} samples ({best_win / fs * 1000:.2f} ms), "
+        f"uncertainty = {uncertainty:.3f}"
+    )
+    return result
+
+
+def plot_window_optimization_old(t, result, freq_range=(100, 19000)):
+    """
+    One-page diagnostic plot per tree:
+      - Top: time–frequency comparison (full vs best windowed IR)
+      - Bottom: optimization metrics
+    """
+
+    ir_full = result["signals"]["ir_full"]
+    ir_best = result["signals"]["ir_best"]
+    fs = result["fs"]
+
+    fig = plt.figure(figsize=(8, 10))
+    gs = fig.add_gridspec(3, 1, height_ratios=[2.5, 2.5, 1], hspace=0.5)
+
+    # --- Top panels: time–frequency ---
+    ax_time = fig.add_subplot(gs[0])
+    ax_freq = fig.add_subplot(gs[1])
+
+    pyfar.plot.time_freq(
+        ir_full,
+        unit="samples",
+        dB_time=True,
+        label="Full IR",
+        ax=[ax_time, ax_freq],
+    )
+    pyfar.plot.time_freq(
+        ir_best,
+        unit="samples",
+        dB_time=True,
+        label="Best windowed IR",
+        ax=[ax_time, ax_freq],
+    )
+
+    ax_time.set_xlim(0, len(ir_full.time[0]))
+    ax_freq.set_ylim(-40, 50)
+    ax_freq.legend(loc="lower left", fontsize=7)
+    ax_freq.axvline(freq_range[0], color="green", ls="--", lw=2)
+    ax_freq.axvline(freq_range[1], color="green", ls="--", lw=2)
+
+    title_text = (
+        f"Tree {t['tree_id']} ({t.get('species_short', '')})\n"
+        f"Best window: {result['best_window_samples']} samples "
+        f"({result['best_window_ms']:.1f} ms), "
+        f"Uncertainty = {result['uncertainty']:.3f}"
+    )
+    ax_time.set_title(title_text, fontsize=10)
+
+    # --- Bottom panel: metrics ---
+    ax_diag = fig.add_subplot(gs[2])
+    wl = result["diagnostics"]["window_lengths"]
+
+    ax_diag.plot(wl, result["diagnostics"]["r_low_log"], label="r_low_log", marker="o")
+    ax_diag.plot(
+        wl, result["diagnostics"]["r_high_log"], label="r_high_log", marker="^"
+    )
+    ax_diag.plot(
+        wl, result["diagnostics"]["var_highfreq"], label="var_highfreq", marker="x"
+    )
+    ax_diag.plot(wl, result["diagnostics"]["score"], label="combined_score", marker="s")
+    ax_diag.axvline(result["best_window_samples"], color="red", lw=1.5, ls="--")
+
+    ax_diag.set_xlabel("Window length (samples)")
+    ax_diag.set_ylabel("Metric value")
+    ax_diag.legend(fontsize=8)
+    ax_diag.grid(True, ls="--", alpha=0.3)
+
+    fig.suptitle(f"Window Optimization Diagnostics — Tree {t['tree_id']}", fontsize=12)
+    fig.tight_layout()
+
+    return fig
+
+
+def plot_window_optimization_odd(t, result, freq_range=(100, 19000), pdf=None):
+    """
+    Plot diagnostics for optimal window length:
+        - top: time–frequency before/after windowing
+        - middle: log-binned smoothed TFs + mean TF
+        - bottom: metrics: low/high frequency correlations, high-freq variance, combined score
+    """
+
+    ir_full = result["signals"]["ir_full"]
+    ir_best = result["signals"]["ir_best"]
+    fs = result["fs"]
+
+    # --- Create figure ---
+    fig = plt.figure(figsize=(10, 12))
+    gs = fig.add_gridspec(3, 1, height_ratios=[3, 2, 1], hspace=0.4)
+
+    # --- Top: TF comparison (full vs best windowed) ---
+    ax_top = fig.add_subplot(gs[0])
+    pyfar.plot.time_freq(
+        ir_full, unit="samples", dB_time=True, label="Full IR", ax=[ax_top]
+    )
+    pyfar.plot.time_freq(
+        ir_best, unit="samples", dB_time=True, label="Best windowed IR", ax=[ax_top]
+    )
+    ax_top.set_title(
+        f"Tree {t['tree_id']} ({t['species_short']}) — Time-Frequency IR", fontsize=10
+    )
+
+    # --- Middle: log-binned smoothed TF + mean ---
+    ax_mid = fig.add_subplot(gs[1])
+
+    # compute raw magnitude spectra
+    tf_full = np.abs(ir_full.freq)  # shape: channels x samples
+    tf_best = np.abs(ir_best.freq)
+
+    # convert to dB
+    tf_full_db = 20 * np.log10(np.maximum(tf_full, 1e-12))
+    tf_best_db = 20 * np.log10(np.maximum(tf_best, 1e-12))
+
+    # frequency axis
+    n_samples = tf_full_db.shape[1]
+    freqs = np.linspace(0, fs / 2, n_samples)
+    if freqs[0] == 0:
+        freqs, tf_full_db, tf_best_db = freqs[1:], tf_full_db[:, 1:], tf_best_db[:, 1:]
+
+    # log-binned smoothing
+    n_bins = 200
+    log_edges = np.logspace(np.log10(freqs[0]), np.log10(freqs[-1]), n_bins)
+    smoothed_full = []
+    smoothed_best = []
+    bin_centers = []
+
+    for lo, hi in zip(log_edges[:-1], log_edges[1:]):
+        mask = (freqs >= lo) & (freqs < hi)
+        if not np.any(mask):
+            continue
+        # collapse channel dimension
+        smoothed_full.append(np.mean(tf_full_db[:, mask], axis=None))
+        smoothed_best.append(np.mean(tf_best_db[:, mask], axis=None))
+        bin_centers.append(np.sqrt(lo * hi))
+
+    smoothed_full = np.array(smoothed_full)
+    smoothed_best = np.array(smoothed_best)
+    bin_centers = np.array(bin_centers)
+
+    # plot smoothed TFs
+    ax_mid.plot(
+        bin_centers, smoothed_full, label="Full IR (mean, log-binned)", color="blue"
+    )
+    ax_mid.plot(
+        bin_centers,
+        smoothed_best,
+        label="Best windowed IR (mean, log-binned)",
+        color="orange",
+    )
+    ax_mid.set_xscale("log")
+    ax_mid.set_xlim(freq_range)
+    ax_mid.set_ylabel("Magnitude (dB)")
+    ax_mid.set_xlabel("Frequency (Hz)")
+    ax_mid.set_title("Log-binned Smoothed TF Comparison")
+    ax_mid.legend(fontsize=8)
+    ax_mid.grid(True, ls="--", alpha=0.3)
+
+    # --- Bottom: metrics ---
+    ax_bot = fig.add_subplot(gs[2])
+    diag = result["diagnostics"]
+    wl = diag["window_lengths"]
+    ax_bot.plot(wl, diag["r_low_log"], label="r_low_log", marker="o")
+    ax_bot.plot(wl, diag["r_high_log"], label="r_high_log", marker="x")
+    ax_bot.plot(wl, diag["var_highfreq"], label="var_highfreq", marker="s")
+    ax_bot.plot(wl, diag["score"], label="score", marker="^")
+    ax_bot.axvline(result["best_window_samples"], color="red", lw=1.5, ls="--")
+    ax_bot.set_xlabel("Window length (samples)")
+    ax_bot.set_ylabel("Metric value")
+    ax_bot.legend(fontsize=8)
+    ax_bot.grid(True, ls="--", alpha=0.3)
+    ax_bot.set_title("Window Optimization Metrics")
+
+    fig.suptitle(f"Tree {t['tree_id']} — Optimal Window Diagnostics", fontsize=12)
+    fig.tight_layout()
+
+    if pdf is not None:
+        pdf.savefig(fig)
+        plt.close(fig)
+    else:
+        plt.show()
+
+    return fig
+
+
+def plot_window_diagnostics_old(t, result, freq_range=(100, 19000), n_log_bins=200):
+    """
+    One-page diagnostic plot per tree:
+      - top: time–frequency comparison (full vs best windowed)
+      - overlay: mean TF (log-binned)
+      - bottom: metric diagnostics (r_allfreq, var_highfreq, score)
+    """
+    ir_full = result["signals"]["ir_full"]
+    ir_best = result["signals"]["ir_best"]
+    fs = result["fs"]
+
+    # --- Flatten TF arrays safely ---
+    tf_full = np.abs(ir_full.freq).flatten()
+    tf_best = np.abs(ir_best.freq).flatten()
+
+    # --- Compute frequency axis from FFT ---
+    n_samples = ir_full.n_samples
+    freqs = np.fft.rfftfreq(n_samples, d=1 / fs)
+
+    # --- Apply frequency mask ---
+    valid_mask = (freqs >= freq_range[0]) & (freqs <= freq_range[1])
+    tf_full_valid = tf_full[valid_mask]
+    tf_best_valid = tf_best[valid_mask]
+    freqs_valid = freqs[valid_mask]
+
+    # --- Compute log-binned mean TF for overlay ---
+    freq_bins = np.logspace(
+        np.log10(freq_range[0]), np.log10(freq_range[1]), n_log_bins
+    )
+    tf_mean = np.zeros(len(freq_bins) - 1)
+    bin_centers = np.zeros(len(freq_bins) - 1)
+
+    for i in range(len(freq_bins) - 1):
+        mask = (freqs_valid >= freq_bins[i]) & (freqs_valid < freq_bins[i + 1])
+        bin_centers[i] = (freq_bins[i] + freq_bins[i + 1]) / 2
+        if np.any(mask):
+            tf_mean[i] = np.nanmean(tf_full_valid[mask])
+        else:
+            tf_mean[i] = np.nan
+
+    # --- Create figure ---
+    fig = plt.figure(figsize=(8, 10))
+    gs = fig.add_gridspec(3, 1, height_ratios=[2.5, 2.5, 1], hspace=0.5)
+
+    # --- Top two panels: Time–Frequency plots ---
+    ax_time = fig.add_subplot(gs[0])
+    ax_freq = fig.add_subplot(gs[1])
+
+    pyfar.plot.time_freq(
+        ir_full,
+        unit="samples",
+        dB_time=True,
+        label="Full IR",
+        ax=[ax_time, ax_freq],
+    )
+    pyfar.plot.time_freq(
+        ir_best,
+        unit="samples",
+        dB_time=True,
+        label="Best windowed IR",
+        ax=[ax_time, ax_freq],
+    )
+
+    # --- Overlay mean TF ---
+    ax_freq.plot(
+        bin_centers,
+        20 * np.log10(tf_mean + 1e-12),
+        "r--",
+        lw=1.5,
+        label="Mean TF (log-binned)",
+    )
+
+    ax_time.set_xlim(0, len(ir_full.time[0]))
+    ax_freq.set_ylim(-40, 50)
+    ax_freq.legend(loc="lower left", fontsize=7)
+    ax_freq.axvline(freq_range[0], color="green", ls="--", lw=2)
+    ax_freq.axvline(freq_range[1], color="green", ls="--", lw=2)
+
+    title_text = (
+        f"Tree {t['tree_id']} ({t['species_short']})\n"
+        f"Best window: {result['best_window_samples']} samples "
+        f"({result['best_window_ms']:.1f} ms), "
+        f"Uncertainty = {result['uncertainty']:.3f}"
+    )
+    ax_time.set_title(title_text, fontsize=10)
+
+    # --- Diagnostics subplot ---
+    ax_diag = fig.add_subplot(gs[2])
+    wl = result["diagnostics"]["window_lengths"]
+    ax_diag.plot(wl, result["diagnostics"]["r_allfreq"], label="r_allfreq", marker="o")
+    ax_diag.plot(
+        wl, result["diagnostics"]["var_highfreq"], label="var_highfreq", marker="x"
+    )
+    ax_diag.plot(wl, result["diagnostics"]["score"], label="score", marker="s")
+    ax_diag.axvline(result["best_window_samples"], color="red", lw=1.5, ls="--")
+    ax_diag.set_xlabel("Window length (samples)")
+    ax_diag.set_ylabel("Metric value")
+    ax_diag.legend(fontsize=8)
+    ax_diag.grid(True, ls="--", alpha=0.3)
+
+    fig.suptitle(f"Window Optimization Diagnostics — Tree {t['tree_id']}", fontsize=12)
+    fig.tight_layout()
+    # plt.show()
+
+    return fig
+
+
+def plot_window_optimization_odd(result, freq_range=(100, 19000)):
+    """
+    Plot IR and TF diagnostics from find_optimal_window_length result.
+
+    Parameters
+    ----------
+    result : dict
+        Output from find_optimal_window_length().
+    freq_range : tuple
+        Frequency range to highlight in the TF plot.
+    """
+    ir_full = result["signals"]["ir_full"]
+    ir_best = result["signals"]["ir_best"]
+    fs = result["fs"]
+
+    # --- Impulse Response Panel ---
+    t_ir = np.arange(ir_full.n_samples) / fs
+    ir_full_data = ir_full.time.flatten()
+    ir_best_data = ir_best.time.flatten()
+
+    # --- Transfer Function Panel ---
+    freqs = np.fft.rfftfreq(ir_full.n_samples, 1 / fs)
+    tf_full = 20 * np.log10(np.abs(ir_full.freq).flatten() + 1e-12)
+    tf_best = 20 * np.log10(np.abs(ir_best.freq).flatten() + 1e-12)
+    tf_mean = (tf_full + tf_best) / 2
+
+    # --- Create figure ---
+    fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=False)
+
+    # Panel 1: IR
+    axes[0].plot(t_ir * 1000, ir_full_data, label="Full IR", color="C0")
+    axes[0].plot(t_ir * 1000, ir_best_data, label="Windowed IR", color="C1", alpha=0.7)
+    axes[0].set_xlabel("Time (ms)")
+    axes[0].set_ylabel("Amplitude")
+    axes[0].set_title(f"Tree {result['tree_id']} - Impulse Response")
+    axes[0].legend()
+    axes[0].grid(True)
+
+    # Panel 2: TF
+    axes[1].plot(freqs, tf_full, label="Full IR TF", color="C0")
+    axes[1].plot(freqs, tf_best, label="Windowed IR TF", color="C1", alpha=0.7)
+    axes[1].plot(freqs, tf_mean, label="Mean TF", color="C2", linestyle="--")
+
+    # Highlight frequency range
+    axes[1].axvline(freq_range[0], color="k", linestyle=":", label="Freq Range")
+    axes[1].axvline(freq_range[1], color="k", linestyle=":")
+
+    axes[1].set_xscale("log")
+    axes[1].set_xlabel("Frequency (Hz)")
+    axes[1].set_ylabel("Magnitude (dB)")
+    axes[1].set_title("Transfer Function")
+    axes[1].legend()
+    axes[1].grid(True, which="both", ls="--", alpha=0.5)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_window_optimization(t, result, freq_range=(100, 19000)):
+    """
+    Plot impulse response (IR) and transfer function (TF) comparison for a tree.
+    Shows full IR, best windowed IR, and smoothed TF.
+
+    Parameters
+    ----------
+    t : dict
+        Tree metadata (must contain 'tree_id')
+    result : dict
+        Output from find_optimal_window_length
+    freq_range : tuple
+        Frequency range to highlight in TF plot
+    """
+    # --- Extract signals ---
+    ir_full = result["signals"]["ir_full"]
+    ir_best = result["signals"]["ir_best"]
+    smoothed_tf = result["signals"]["ir_smoothed"]
+    fs = result["fs"]
+
+    # --- Compute TFs ---
+    # Full and windowed TFs in dB
+    tf_full_db = 20 * np.log10(np.abs(ir_full.freq).flatten() + 1e-12)
+    tf_best_db = 20 * np.log10(np.abs(ir_best.freq).flatten() + 1e-12)
+    freqs = np.linspace(0, fs / 2, len(tf_full_db))
+
+    # --- Create figure ---
+    fig = plt.figure(figsize=(8, 10))
+    gs = fig.add_gridspec(2, 1, height_ratios=[3, 3], hspace=0.4)
+
+    # --- Top: Impulse responses ---
+    ax_time = fig.add_subplot(gs[0])
+    pyfar.plot.time(ir_full, unit="samples", dB=True, label="Full IR", ax=ax_time)
+    pyfar.plot.time(
+        ir_best, unit="samples", dB=True, label="Best windowed IR", ax=ax_time
+    )
+    ax_time.set_title(
+        f"Tree {t['tree_id']} ({t.get('species_short', '')})\n"
+        f"Best window: {result['best_window_samples']} samples "
+        f"({result['best_window_ms']:.1f} ms), "
+        f"Uncertainty = {result['uncertainty']:.3f}",
+        fontsize=10,
+    )
+    ax_time.set_xlabel("Time [samples]")
+    ax_time.set_ylabel("Amplitude")
+    ax_time.grid(True, alpha=0.3)
+    ax_time.legend(frameon=False, fontsize=8)
+
+    # --- Bottom: Transfer functions ---
+    ax_freq = fig.add_subplot(gs[1])
+
+    # Full and windowed TF (linear frequency)
+    ax_freq.plot(freqs, tf_full_db, label="Full TF", lw=1, alpha=0.6)
+    ax_freq.plot(freqs, tf_best_db, label="Best windowed TF", lw=1)
+
+    # Smoothed TF (log-binned)
+    n_log_bins = len(smoothed_tf)
+    log_freqs = np.logspace(
+        np.log10(freq_range[0]), np.log10(freq_range[1]), n_log_bins
+    )
+    ax_freq.plot(log_freqs, smoothed_tf, label="Smoothed TF", lw=1.2, ls="--")
+
+    # --- Axis settings ---
+    ax_freq.set_xscale("log")
+    ax_freq.set_xlim(freq_range)  # ensures green lines are visible
+    ax_freq.set_ylim(-40, 50)  # adjust if needed
+    ax_freq.set_xlabel("Frequency [Hz]")
+    ax_freq.set_ylabel("Magnitude [dB]")
+
+    # --- Vertical lines for frequency range ---
+    ax_freq.axvline(freq_range[0], color="green", ls="--", lw=1.5)
+    ax_freq.axvline(freq_range[1], color="green", ls="--", lw=1.5)
+
+    ax_freq.grid(True, which="both", alpha=0.3)
+    ax_freq.legend(frameon=False, fontsize=8)
+    ax_freq.set_title("Transfer Function Comparison", fontsize=10)
+
+    fig.tight_layout()
     return fig
 
 
@@ -752,6 +1639,21 @@ def main():
         traits["data"] = tree_data
         all_trees.append(traits)
 
+    # --- TF window optimization for all trees ---
+    pdf_path = figures_dir / "tf_window_optimization.pdf"
+    with PdfPages(pdf_path) as pdf:
+        for t in all_trees:
+            print(f"--- Optimizing TF window for tree {t['tree_id']} ---")
+
+            result = find_optimal_window_length(t)
+            if result is None:
+                continue
+            fig = plot_window_optimization(t, result)
+            pdf.savefig(fig)
+            plt.close(fig)
+
+    print(f"✅ All window optimization plots saved to {pdf_path}")
+    exit()
     # --- FFT of trimmed recordings ---
     with PdfPages("figures/fft_trimmed_recordings.pdf") as pdf:
         for t in all_trees:
@@ -787,6 +1689,31 @@ def main():
                 logging.warning(f"Trim overlay failed for {t['tree_id']}: {e}")
                 continue
 
+    # pdf_path = figures_dir / "tf_window_optimization_auto.pdf"
+    # with PdfPages(pdf_path) as pdf:
+    #     # === Find optimal window length ===
+    #     print(f"\n--- Optimizing TF window for tree {tree_id} ---")
+    #     result = find_optimal_window_length(
+    #         t=traits,
+    #         freq_range=(100, 20000),  # full frequency range
+    #         alpha=0.3,
+    #     )
+
+    #     # if result is None:
+    #     #     print(f"⚠️ Optimization failed for tree {tree_id}")
+    #     #     continue
+
+    #     # === Plot diagnostics and TF comparison ===
+    #     fig = plot_window_diagnostics(traits, result, freq_range=(100, 20000))
+    #     pdf.savefig(fig)
+    #     plt.close(fig)
+
+    #     print(
+    #         f"Tree {tree_id}: optimal window = {result['best_window_samples']} samples "
+    #         f"(≈ {result['best_window_ms']:.1f} ms), "
+    #         f"uncertainty = {result['uncertainty']:.3f}"
+    #     )
+    exit()
     # === Time–Frequency window sweeps for all trees ===
     pdf_path = Path("figures/tf_window_exploration.pdf")
     pdf_path.parent.mkdir(exist_ok=True)
@@ -813,14 +1740,22 @@ def main():
             - but keep it short enough to remove reflections that cause spectral ripples (wiggliness).
             - so we want low wiggliness (remove reflections, short IR) and the window being as short as possible (without loosing spectral resolution from the short window).
     """
-    window_sizes_samples = (120, 240, 360)
-    offsets_samples = (0, 15, 30)
+
+    window_sizes_samples = (
+        120,
+        480,
+        1200,
+        2400,
+        4800,
+        4800,
+    )  # ≈ 2.5, 10, 25, 50, 100 ms at 48kHz
+    offset_samples = 0
     freq_range = (100, 20000)
 
     with PdfPages(pdf_path) as pdf:
         for t in all_trees:
             fig = create_tf_window_grid(
-                t, window_sizes_samples, offsets_samples, freq_range
+                t, window_sizes_samples, offset_samples, freq_range
             )
             if fig is not None:
                 pdf.savefig(fig)
