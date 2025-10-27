@@ -4,16 +4,6 @@ from matplotlib.widgets import Slider, Button
 from scipy.signal import chirp, fftconvolve
 import sounddevice as sd
 
-"""
-TODO:
-   - implement the interactive mixing of two sweeps with delay, as if the second delayed sweep would be the reflection (sweep + sweep_reflected/delayed = obseved signal)
-   - look how the IR responses to different delays
-   - make the IR sound
-   - annotate axes and units
-   - highlight reasonable window sizes for the speaker range
-   - annotate and push to git
-"""
-
 # --- Parameters ---
 fs = 48000
 T_sweep = 0.05  # 50 ms sweep

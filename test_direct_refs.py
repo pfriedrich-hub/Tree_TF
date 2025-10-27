@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 test_direct_refs.py
-
+testing the scaling with the trees where direct references exist
 For special trees (313, 353, 344), generate two PDFs:
 1. recording vs direct reference (direct measurement)
 2. recording vs distance-scaled reference (2 m reference scaled to canopy distance)
@@ -79,7 +79,7 @@ def main():
                 continue
             data = load_pickle(pkl)
             rec = to_array(data.get("recording"))
-            ref = to_array(data.get("ref_dist"))   # raw distance-scaled reference
+            ref = to_array(data.get("ref_dist"))  # raw distance-scaled reference
             if rec is None or ref is None:
                 continue
             sr = getattr(data.get("recording"), "samplerate", 48000)

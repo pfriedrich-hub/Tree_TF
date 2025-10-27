@@ -21,6 +21,9 @@ This repository contains code and tools for recording and analyzing the acoustic
 - **`clean_pkls.py`**
   Can be used for cleaning up data dirs, if correct pkls cannot be found otherwise.
 
+- **`comb_filter.py`**
+  Interactive Visualization of impulse response and transfer function
+
 ---
 
 ## Usage
@@ -43,6 +46,8 @@ This repository contains code and tools for recording and analyzing the acoustic
 
    ```bash
    python tf.py
+   # and
+   python comb_filter.py
    ```
 
 ---
@@ -51,9 +56,4 @@ This repository contains code and tools for recording and analyzing the acoustic
 
 * Make sure all dependencies are installed (e.g. NumPy, SciPy, matplotlib, etc.). Have a look at the environmetn.yml.
 * Data output and plots will be saved in respective folders (e.g. `figures/`).
-
----
-
-## Contact
-
-For questions or contributions, feel free to open an issue or pull request.
+* figures_0line shows figures before trimming the signals, with a fixed window length of 120ms for a distance scaled and median scaled reference
