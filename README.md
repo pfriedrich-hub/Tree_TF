@@ -31,7 +31,7 @@ This repository contains code and tools for recording and analyzing the acoustic
 1. **Record data in the field:**
    ```bash
    python main.py
-````
+   ```
 
 2. **Run post-processing after recordings:**
 
