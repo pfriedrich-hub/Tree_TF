@@ -15,6 +15,7 @@ import freefield
 fs = 48828  # sampling rate of the TDT processor
 slab.set_default_samplerate(fs)
 
+
 def record(id, signal, n_recordings, rec_distance, show=True, axis=None):
     # record n_recordings times and average
     logging.info('Recording...')
@@ -34,6 +35,7 @@ def record(id, signal, n_recordings, rec_distance, show=True, axis=None):
         counter += 1
     recording.write(Path.cwd() /'data' / id / f'{id}_rec.wav')
     return recording, id
+
 
 def compute_tf(id=None, rec_distance=1.0, recording=None, reference=None, window_size=120):
     """
@@ -105,6 +107,7 @@ def distance_scale(sound, input_distance, output_distance=1.0):
     scaled = copy.deepcopy(sound)
     scaled.data *= scale_factor
     return scaled
+
 
 def plot(recording, raw_tf, windowed_tf):
     fig, axes = plt.subplots(3, 1, figsize=(10, 10), constrained_layout=True)
