@@ -1,0 +1,49 @@
+criterion,leaf_type,response,predictors,adj_r2,n
+adj_r2,broadleaf,low,ldmc + ENL + leaf_thickness_mm,0.938295288284304,9
+adj_r2,needleleaf,low,leaf_thickness_mm + LAD + leaf_area_cm2,0.624065610667137,8
+adj_r2,mixed,low,vol_fill_fraction + leaf_area_cm2,0.271288498548624,17
+adj_r2,broadleaf,mid,ldmc + crown_volume_m3 + leaf_thickness_mm,0.573317428857484,9
+adj_r2,needleleaf,mid,ldmc + gap_fraction,0.723108673172454,8
+adj_r2,mixed,mid,vol_fill_fraction + leaf_area_cm2 + ldmc,0.476332057000264,17
+adj_r2,broadleaf,high,LAD + ldmc + leaf_area_cm2,0.779219863860928,9
+adj_r2,needleleaf,high,leaf_area_cm2 + leaf_thickness_mm + crown_volume_m3,0.818652647798739,8
+adj_r2,mixed,high,LAD + leaf_area_cm2,0.592062287522802,17
+adj_r2,broadleaf,overall,LAD + ldmc + leaf_area_cm2,0.831465365836209,9
+adj_r2,needleleaf,overall,leaf_area_cm2 + leaf_thickness_mm + crown_volume_m3,0.816639605742682,8
+adj_r2,mixed,overall,LAD + leaf_area_cm2,0.605123437095354,17
+f_test,broadleaf,low,ldmc + ENL + leaf_thickness_mm,0.938295288284304,9
+f_test,needleleaf,low,leaf_thickness_mm + LAD,0.521834682466012,8
+f_test,mixed,low,vol_fill_fraction,0.224600189657758,17
+f_test,broadleaf,mid,ldmc + crown_volume_m3,0.473849844776995,9
+f_test,needleleaf,mid,ldmc + gap_fraction,0.723108673172454,8
+f_test,mixed,mid,vol_fill_fraction + leaf_area_cm2,0.448750439925833,17
+f_test,broadleaf,high,LAD + ldmc,0.749414124021873,9
+f_test,needleleaf,high,(null),0,8
+f_test,mixed,high,LAD + leaf_area_cm2,0.592062287522802,17
+f_test,broadleaf,overall,LAD + ldmc + leaf_area_cm2,0.831465365836209,9
+f_test,needleleaf,overall,(null),0,8
+f_test,mixed,overall,LAD + leaf_area_cm2,0.605123437095354,17
+loocv,broadleaf,low,ldmc + ENL + vol_fill_fraction,0.908077583695464,9
+loocv,needleleaf,low,LAD + leaf_area_cm2,0.629685181173944,8
+loocv,mixed,low,FHD + leaf_thickness_mm,0.0327813243176645,17
+loocv,broadleaf,mid,ldmc + height_m + leaf_thickness_mm,0.485964374167651,9
+loocv,needleleaf,mid,ldmc + crown_volume_m3 + leaf_thickness_mm,0.849464492189935,8
+loocv,mixed,mid,vol_fill_fraction,0.338214159753362,17
+loocv,broadleaf,high,LAD + ldmc + toughness,0.757408686596281,9
+loocv,needleleaf,high,leaf_area_cm2 + leaf_thickness_mm + crown_volume_m3,0.818652647798739,8
+loocv,mixed,high,LAD + leaf_area_cm2,0.592062287522802,17
+loocv,broadleaf,overall,LAD + ldmc + toughness,0.81309272429817,9
+loocv,needleleaf,overall,leaf_area_cm2 + leaf_thickness_mm + crown_volume_m3,0.816639605742682,8
+loocv,mixed,overall,LAD + leaf_area_cm2,0.605123437095354,17
+bic,broadleaf,low,ldmc + ENL + leaf_thickness_mm,0.938295288284304,9
+bic,needleleaf,low,leaf_thickness_mm + LAD + leaf_area_cm2,0.624065610667137,8
+bic,mixed,low,vol_fill_fraction,0.224600189657758,17
+bic,broadleaf,mid,ldmc + crown_volume_m3 + leaf_thickness_mm,0.573317428857484,9
+bic,needleleaf,mid,ldmc + gap_fraction,0.723108673172454,8
+bic,mixed,mid,vol_fill_fraction + leaf_area_cm2,0.448750439925833,17
+bic,broadleaf,high,LAD + ldmc + leaf_area_cm2,0.779219863860928,9
+bic,needleleaf,high,(null),0,8
+bic,mixed,high,LAD + leaf_area_cm2,0.592062287522802,17
+bic,broadleaf,overall,LAD + ldmc + leaf_area_cm2,0.831465365836209,9
+bic,needleleaf,overall,(null),0,8
+bic,mixed,overall,LAD + leaf_area_cm2,0.605123437095354,17

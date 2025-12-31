@@ -1,0 +1,27 @@
+COLLINEARITY ANALYSIS REPORT
+============================================================
+
+HIGH CORRELATIONS (|r| > 0.7):
+----------------------------------------
+  height_m <-> ENL: r = 0.980
+  ENL <-> FHD: r = 0.978
+  height_m <-> FHD: r = 0.969
+  leaf_thickness_mm <-> toughness: r = 0.847
+  gap_fraction <-> LAD: r = -0.817
+  height_m <-> crown_volume_m3: r = 0.704
+  crown_volume_m3 <-> ENL: r = 0.704
+
+VARIANCE INFLATION FACTORS:
+----------------------------------------
+  height_m                 : 163.16 *** EXCLUDE
+  FHD                      : 151.11 *** EXCLUDE
+  ENL                      : 123.55 *** EXCLUDE
+  crown_volume_m3          :  81.11 *** EXCLUDE
+  LAD                      :  36.67 *** EXCLUDE
+  leaf_thickness_mm        :  34.67 *** EXCLUDE
+  toughness                :  22.20 *** EXCLUDE
+  gap_fraction             :  19.52 *** EXCLUDE
+  leaf_voxel_density       :  12.00 *** EXCLUDE
+  ldmc                     :   5.67 ** HIGH
+  vol_fill_fraction        :   4.73
+  leaf_area_cm2            :   3.74
