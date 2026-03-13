@@ -1,0 +1,366 @@
+---
+title: "Tree Sound Absorption"
+subtitle: "Linking Structural Traits to Acoustic Attenuation"
+author: "Anna"
+format:
+  revealjs:
+    embed-resources: true
+    theme: [simple]
+    slide-number: true
+    transition: fade
+    scrollable: true
+    width: 1200
+    height: 800
+    margin: 0.02
+execute:
+  echo: false
+  eval: false
+---
+
+<style>
+.reveal {
+  background-color: #2d4a3e;
+  color: #d4e6d4;
+}
+.reveal h1, .reveal h2, .reveal h3 {
+  color: #b8d4b8;
+}
+.reveal pre {
+  background-color: #1e3a2e;
+  border: 1px solid #4a6a5a;
+  padding: 0.8em;
+}
+.reveal pre code {
+  color: #d4e6d4;
+  opacity: 1;
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+.reveal pre code span { opacity: 1; }
+.reveal table { color: #d4e6d4; }
+.reveal th { background-color: #3d5a4e; color: #d4e6d4; }
+.reveal td { border-color: #4a6a5a; }
+.reveal a { color: #a8d4a8; }
+.reveal .slides { overflow-y: auto; scrollbar-gutter: stable; }
+.reveal .slides::-webkit-scrollbar { width: 8px; }
+.reveal .slides::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+.reveal .slides::-webkit-scrollbar-thumb { background: rgba(168,213,162,0.5); border-radius: 4px; }
+.small-table { font-size: 0.75em; }
+.small-text { font-size: 0.8em; }
+.highlight { color: #f4c76b; font-weight: bold; }
+.reveal .highlight { color: #f4c76b; }
+</style>
+
+
+## Why Trees and Sound?
+
+Urban noise is a health problem — traffic, construction, tram lines, playgrounds.
+
+Trees are already planted everywhere. **Can we quantify their acoustic filtering?**
+
+**Key question:** [Can measurable tree traits predict frequency-dependent sound attenuation?]{.highlight}
+
+---
+
+## Study Design
+
+![**Site:** Großpösna Arboretum, 10 species (5 broadleaf, 5 needleleaf), 17 trees; **Three data sources:** Acoustic transfer functions (speaker → through canopy → microphone), 3D structural traits from terrestrial laser scanning (TLS), Leaf morphology traits from lab measurements](field_setup.jpg){width="100%"}
+
+---
+
+## Acoustic Measurement
+
+- **Signal:** Logarithmic sweep 20 Hz – 20 kHz, 0.5 s, 85 dB SPL
+- **10 averages** per tree to reduce noise
+- **One free-field reference** (no tree) for all measurements
+- Speaker and mic at **height of densest canopy layer** (from TLS)
+- Equipment: Genelec speaker, TDT RP2 @ 48,828 Hz
+
+---
+
+## Processing Pipeline
+
+1. [Baseline reference]{.highlight} — shift reference spectrum to match recording level
+2. [Trim]{.highlight} leading silence from both signals
+3. [Deconvolve]{.highlight} → impulse response (tree = LTI system)
+4. [Window IR]{.highlight} (Hann, ~6 ms) → remove ground reflections
+5. Extract [transfer function]{.highlight} (magnitude spectrum in dB)
+6. Compute [attenuation per band]{.highlight}
+
+---
+
+## Deconvolution
+
+$$H(f) = Y(f) \cdot X_{\text{reg}}^{-1}(f)$$
+
+Regularized inversion prevents instability where reference has low energy (outside 125–18,000 Hz).
+
+**Windowed IR:** 0.25 ms fade-in, 4.8 ms sustain, 1.0 ms fade-out
+
+---
+
+## Effect of Windowing
+
+![](output/figures/ir_comparison/467_6.1_270W_ir.png)
+
+---
+
+## Band Attenuation
+
+**Band attenuation** = mean magnitude in dB per band:
+
+$$\bar{A}_b = \frac{1}{N_b}\sum_{f_i \in b} |H(f_i)|_{\text{dB}}$$
+
+| Band | Range | Context |
+|------|-------|---------|
+| [Low]{.highlight} | 125–500 Hz | Traffic, machinery |
+| [Mid]{.highlight} | 500–2,000 Hz | Speech |
+| [High]{.highlight} | 2,000–18,000 Hz | Broadband |
+
+---
+
+## Attenuation Heatmap
+
+![Mean attenuation per tree across frequency bands](output/figures/attenuation_heatmap.png)
+
+---
+
+## Structural Traits from TLS
+
+**Whole-tree:** Height, crown volume, vol. fill fraction
+
+**Density:** Leaf voxel density, [gap fraction]{.highlight} (directional)
+
+**Complexity indices:**
+
+$$\text{ENL} = \frac{1}{\sum p_i^2} \qquad \text{FHD} = -\sum p_i \log_2 p_i$$
+
+$$\text{LAD} = \frac{-\ln(G_f)}{k \cdot d_c}, \quad k = 0.5$$
+
+**Leaf traits:** Area, thickness, [LDMC]{.highlight}, toughness
+
+---
+
+## Gap Fraction: Tilia tomentosa (518)
+
+:::: {.columns}
+::: {.column width="50%"}
+![Top-down view with sound direction](output/figures/structural/Til_tom_518_topdown.png){width="95%"}
+:::
+::: {.column width="50%"}
+![Projection perpendicular to sound path](output/figures/structural/Til_tom_518_projection.png){width="95%"}
+:::
+::::
+
+---
+
+## Statistical Approach
+
+- [**12 predictors** × **4 bands** × **3 groups**]{.highlight} (broadleaf n=9, needleleaf n=8, mixed n=17)
+- [Forward stepwise]{.highlight} selection, **max 3 predictors**
+- **4 criteria** applied independently: [Adj. R², BIC, LOOCV, F-test]{.highlight}
+- If all 4 agree on a predictor → robust. If they disagree → that IS the result.
+- Collinearity checked but not pre-filtered — stepwise handles this inherently
+
+---
+
+## All Transfer Functions by Leaf Type
+
+![](output/figures/combined/all_tfs_by_leaf_type.png)
+
+---
+
+## Predictor Consensus Across Criteria
+
+![](output/figures/models/combined_predictor_consensus.png)
+
+**Broadleaf:** [LDMC]{.highlight}, [LAD]{.highlight}, leaf thickness across criteria | **Needleleaf:** null models for high-freq
+
+---
+
+## Model Performance
+
+![](output/figures/models/combined_model_accuracy.png)
+
+---
+
+## Best Models → Slider Equations
+
+::: {.small-table}
+
+**Broadleaf:**
+
+| Band | Equation | R² |
+|------|----------|-----|
+| Low  | $\hat{A} = \beta_0 + \beta_1 \cdot \text{LDMC} + \beta_2 \cdot \text{ENL} + \beta_3 \cdot \text{Thickness}$ | 0.94 |
+| Mid  | $\hat{A} = \beta_0 + \beta_1 \cdot \text{LDMC} + \beta_2 \cdot \text{Crown Vol.} + \beta_3 \cdot \text{Thickness}$ | 0.57 |
+| High | $\hat{A} = \beta_0 + \beta_1 \cdot \text{LAD} + \beta_2 \cdot \text{LDMC} + \beta_3 \cdot \text{Leaf Area}$ | 0.78 |
+
+**Needleleaf:**
+
+| Band | Equation | R² |
+|------|----------|-----|
+| Low  | $\hat{A} = \beta_0 + \beta_1 \cdot \text{Thickness} + \beta_2 \cdot \text{LAD} + \beta_3 \cdot \text{Leaf Area}$ | 0.62 |
+| Mid  | $\hat{A} = \beta_0 + \beta_1 \cdot \text{LDMC} + \beta_2 \cdot \text{Gap Frac.}$ | 0.72 |
+| High | No model outperforms intercept | — |
+
+:::
+
+**→ 3 equations → 3 filter gains → parametric EQ → filter urban noise in real time**
+
+---
+
+## Limitations: Measurement Design
+
+::: {.small-text}
+
+| # | Problem | Fix |
+|---|---------|-----|
+| 1 | Single direction per tree | ≥ 3 directions (0°, 120°, 240°) |
+| 2 | Varying distances (3.8–9.0 m) | Standardize or distance-correct |
+| 3 | Single reference for all trees | Per-tree reference |
+| 4 | No replication | ≥ 3 reps per tree-direction |
+| 5 | No seasonal contrast | Leaf-off measurement in winter |
+| 6 | Height fixed to densest slice | Multiple heights or vertical integration |
+
+:::
+
+---
+
+## Limitations: Processing Pipeline
+
+::: {.small-text}
+
+| # | Problem | Fix |
+|---|---------|-----|
+| 7 | Baselining: 200 bins arbitrary | Sensitivity analysis |
+| 8 | Window length (6 ms) fixed | Adaptive or systematic comparison |
+| 9 | Onset threshold (20 dB) | Noise-adaptive, verify per tree |
+| 10 | Regularization range fixed | Justify from speaker response curve |
+| 11 | Magnitude-only TF (phase discarded) | Preserve phase for future work |
+
+:::
+
+---
+
+## Limitations: Structural Traits
+
+::: {.small-text}
+
+| # | Problem | Fix |
+|---|---------|-----|
+| 12 | Gap fraction: 3 m circle radius | Frequency-dependent (Fresnel zone) |
+| 13 | Hit point sometimes near trunk | Start ray from known speaker position |
+| 14 | LAD: Beer–Lambert k=0.5 from optics | Structural proxy, not physical |
+| 15 | ENL/FHD designed for forest stands | Exploratory proxies for single trees |
+| 16 | n ≈ 8–9 per group | More trees → MyDiv |
+
+:::
+
+---
+
+## Next Steps: Technical and Conceptual
+
+- [**Pipeline revised**]{.highlight} since measurements → repeat campaign would be stronger
+- Seasonal measurements (leaf-on vs leaf-off)
+- [Multiple directions]{.highlight}
+- Single trees are inherently limited
+- **→ MyDiv:** [Tree diversity plots]{.highlight} with controlled species mixtures
+- → test biodiversity–attenuation relationship
+- → stable models
+- New question: **Does biodiversity influence sound attenuation?**
+
+---
+
+## Interactive Slider: Hear the Model
+
+<div style="text-align:center; margin:1em 0;">
+<a href="output/sliders/slider_broadleaf.html" target="_blank" 
+   style="display:inline-block; padding:0.8em 2em; background:#4a6a5a; color:white; 
+          border-radius:8px; text-decoration:none; font-size:1.1em; margin:0.3em;">
+   Open Broadleaf Slider
+</a>
+<a href="output/sliders/slider_needleleaf.html" target="_blank"
+   style="display:inline-block; padding:0.8em 2em; background:#4a6a5a; color:white; 
+          border-radius:8px; text-decoration:none; font-size:1.1em; margin:0.3em;">
+   Open Needleleaf Slider
+</a>
+</div>
+
+Move [LDMC]{.highlight} → low-freq changes. Move [LAD]{.highlight} → high-freq changes.
+
+Switch between [highway / tram / construction / children]{.highlight} to hear different urban noises filtered through the model.
+
+*Requires local server:* `cd output && python -m http.server`
+
+---
+
+## Listen: Urban Noise Through Trees
+
+<div id="highway-container" style="position: relative; width: 100%; max-width: 900px; margin: 0 auto;">
+<img src="Arboretum_Choir.png" style="width: 100%; border-radius: 8px;">
+<div style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,0.5);padding:8px 12px;border-radius:6px;color:white;font-size:0.9em;">
+  <select id="scenarioSelect" onchange="switchScenario()" style="background:#333;color:white;border:none;font-size:0.9em;padding:4px;">
+    <option value="highway">Highway</option>
+    <option value="tram">Tram</option>
+    <option value="construction">Construction</option>
+    <option value="children">Children</option>
+  </select>
+</div>
+<div style="position:absolute;top:75%;left:33%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('327_9_170S')" title="Sal cap 327"></div>
+<div style="position:absolute;top:74%;left:23%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('342_6.2_80O')" title="Pse men 342"></div>
+<div style="position:absolute;top:65%;left:26%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('518_4.6_0N')" title="Til tom 518"></div>
+<div style="position:absolute;top:76%;left:48%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('298_4.5_336NW')" title="Abi gra 298"></div>
+<div style="position:absolute;top:33%;left:19%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('332_5_55NO')" title="Pin nig 332"></div>
+<div style="position:absolute;top:35%;left:32%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('502_3.8_46NO')" title="Ced deo 502"></div>
+<div style="position:absolute;top:32%;left:38%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('499_4.6_40NO')" title="Til tom 499"></div>
+<div style="position:absolute;top:41%;left:49%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('277_6.6_120SO')" title="Pru avi 277"></div>
+<div style="position:absolute;top:50%;left:54%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('274_5.1_250W')" title="Pop tre 274"></div>
+<div style="position:absolute;top:62%;left:55%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('281_5.8_190S')" title="Lar dec 281"></div>
+<div style="position:absolute;top:71%;left:62%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('270_5.4_240SW')" title="Aln glu 270"></div>
+<div style="position:absolute;top:57%;left:81%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('467_6.1_270W')" title="Til tom 467"></div>
+<div style="position:absolute;top:48%;left:72%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('232_6.2_230SW')" title="Pru avi 232"></div>
+<div style="position:absolute;top:30%;left:60%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('247_8.2_318NW')" title="Pop tre 247"></div>
+<div style="position:absolute;top:18%;left:52%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('257_5_273W')" title="Pse men 257"></div>
+<div style="position:absolute;top:15%;left:64%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('227_6.6_320NW')" title="Lar dec 227"></div>
+<div style="position:absolute;top:85%;left:33%;width:18px;height:18px;border-radius:50%;background:rgba(168,213,162,0.7);border:2px solid white;cursor:pointer;" onclick="playTree('333_6_325NW')" title="Pin nig 333"></div>
+<audio id="treeAudio" style="display:none;"></audio>
+</div>
+
+<script>
+var currentSrc = null;
+var currentScenario = 'highway';
+
+function switchScenario() {
+  currentScenario = document.getElementById('scenarioSelect').value;
+  // Stop current playback when switching
+  var audio = document.getElementById('treeAudio');
+  audio.pause();
+  currentSrc = null;
+}
+
+function playTree(treeId) {
+  var audio = document.getElementById('treeAudio');
+  var src = 'output/wav/' + treeId + '_filtered_' + currentScenario + '.wav';
+  if (currentSrc === src && !audio.paused) {
+    audio.pause();
+    currentSrc = null;
+  } else {
+    audio.src = src;
+    audio.play();
+    currentSrc = src;
+  }
+}
+</script>
+
+*Select a noise scenario from the dropdown, then click a tree to hear it filtered.*
+
+---
+
+##
+
+![](Arboretum_front.png)
+
+Tree traits can partially predict sound attenuation for broadleaf species — but the method needs scaling from single trees to diverse forest plots.
+
+**Repository available on request.**

@@ -43,6 +43,7 @@ from config import (
     EXCLUDE_IDS,
     CB_INDIGO, CB_ROSE, CB_PURPLE,
     FREQ_LOW, FREQ_HIGH,
+    LEAF_XLSX,
     OUT_DIR,
 )
 from leaf_traits import load_leaf_traits
@@ -456,6 +457,8 @@ def run_pipeline(output_dir: Path = None, leaf_xlsx: Path = None):
     """Run the complete data preparation and visualization pipeline."""
     if output_dir is None:
         output_dir = OUT_DIR
+    if leaf_xlsx is None:
+        leaf_xlsx = LEAF_XLSX
     output_dir = Path(output_dir)
     
     print("=" * 70)
@@ -488,8 +491,8 @@ def run_pipeline(output_dir: Path = None, leaf_xlsx: Path = None):
 def main():
     parser = argparse.ArgumentParser(description="Data preparation and correlation analysis")
     parser.add_argument("--output-dir", type=Path, default=None, help=f"Output directory (default: {OUT_DIR})")
-    parser.add_argument("--leaf-xlsx", type=Path, default=None, 
-                        help="Path to leaf morphology XLSX file (required for leaf traits)")
+    parser.add_argument("--leaf-xlsx", type=Path, default=LEAF_XLSX, 
+                        help=f"Path to leaf morphology XLSX file (default: {LEAF_XLSX})")
     args = parser.parse_args()
     return run_pipeline(args.output_dir, args.leaf_xlsx)
 

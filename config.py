@@ -3,8 +3,6 @@ Configuration for Tree Sound Absorption Analysis (Python Pipeline)
 ==================================================================
 Central configuration file with paths, species mappings, and processing parameters.
 
-Note: R scripts (extract_structural_traits.R, run_stepwise_modeling.R) have their
-own configuration sections - this file is for Python modules only.
 """
 import warnings
 from pathlib import Path
@@ -25,20 +23,22 @@ LEAF_XLSX = "/home/tigris/DATA/Arboretum/021_003_017_leaf_morphology_2023_2025.x
 # ------------------------------------------------
 OUT_DIR = WORK_DIR / "output"
 
-OUT_PKL = OUT_DIR / "pkl"           # Pickle files (Tree objects)
-OUT_WAV = OUT_DIR / "wav"           # Audio outputs (filtered noise, sonifications)
-OUT_CSV = OUT_DIR / "csv"           # CSV data files
+OUT_PKL = OUT_DIR / "pkl"
+OUT_WAV = OUT_DIR / "wav"
+OUT_CSV = OUT_DIR / "csv"
 
 # Figure directories
 OUT_FIG = OUT_DIR / "figures"
 OUT_FIG_TF = OUT_FIG / "transfer_functions"
 OUT_FIG_IR = OUT_FIG / "ir_comparison"
 OUT_FIG_COMBINED = OUT_FIG / "combined"
+OUT_FIG_SLIDER = OUT_FIG / "sliders"
 
 
 def ensure_output_dirs():
     """Create all output directories if they don't exist."""
-    dirs = [OUT_PKL, OUT_WAV, OUT_CSV, OUT_FIG_TF, OUT_FIG_IR, OUT_FIG_COMBINED]
+    dirs = [OUT_PKL, OUT_WAV, OUT_CSV, OUT_FIG_TF, OUT_FIG_IR,
+            OUT_FIG_COMBINED, OUT_FIG_SLIDER]
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
 
@@ -50,17 +50,18 @@ SAMPLE_RATE = 48828  # Hz (TDT processor)
 FREQ_LOW = 125       # Hz - lower bound of analysis
 FREQ_HIGH = 18000    # Hz - upper bound
 
-# Band definitions for attenuation metrics (Hz)
-BAND_LOW = (125, 500) # traffic, machinery
-BAND_MID = (500, 2000) # human speech
-BAND_HIGH = (2000, 18000) # bird songs
+
+# Sound profiles: no band extraction — the acoustic analysis uses generic low/mid/high/overall.
+BAND_LOW = (125, 500)
+BAND_MID = (500, 2000)
+BAND_HIGH = (2000, 18000)
 
 # Sonification parameters
 WHITE_NOISE_DURATION_S = 3.0
-PLAYGROUND_NOISE_FILE = "playground.wav"  # Any length works; checked in OUT_WAV then DATA_DIR
+PLAYGROUND_NOISE_FILE = "playground.wav"
 
 # ------------------------------------------------
-# TREE IDS - All trees with acoustic measurements
+# TREE IDS
 # ------------------------------------------------
 TREE_IDS = [
     "227_6.6_320NW",
@@ -82,7 +83,6 @@ TREE_IDS = [
     "518_4.6_0N",
 ]
 
-# Trees to exclude (linear sweeps)
 EXCLUDE_IDS = [313, 344, 353]
 
 # ------------------------------------------------
@@ -109,19 +109,17 @@ SPECIES_LONG_MAP = {
     "Sal cap": "Salix caprea",
 }
 
-# Leaf type classification
 NEEDLELEAF_SPECIES = {"Lar dec", "Pse men", "Pin nig", "Abi gra", "Ced deo"}
 BROADLEAF_SPECIES = {"Pop tre", "Pru avi", "Til tom", "Aln glu", "Sal cap"}
 
 # ------------------------------------------------
 # COLORBLIND-FRIENDLY PALETTE
-# Color logic: red(broad) + blue(needle) = purple(mixed)
 # ------------------------------------------------
-CB_ROSE = "#CC6677"       # Broadleaf (reddish)
-CB_INDIGO = "#332288"     # Needleleaf (bluish)
-CB_PURPLE = "#AA4499"     # Mixed analysis (purple = red + blue)
-CB_FOREST = "#117733"     # Tree/vegetation (darker)
-CB_GOLD = "#DDCC77"       # Highlights/markers
+CB_ROSE = "#CC6677"
+CB_INDIGO = "#332288"
+CB_PURPLE = "#AA4499"
+CB_FOREST = "#117733"
+CB_GOLD = "#DDCC77"
 
 
 # ------------------------------------------------
@@ -129,16 +127,6 @@ CB_GOLD = "#DDCC77"       # Highlights/markers
 # ------------------------------------------------
 
 def parse_tree_id(tree_id: str) -> dict:
-    """
-    Parse tree ID string into components.
-    
-    Example: "270_5.4_240SW" -> {
-        "tree_id": "270_5.4_240SW",
-        "numeric_id": 270,
-        "distance_m": 5.4,
-        "direction": "240SW"
-    }
-    """
     parts = tree_id.split("_")
     return {
         "tree_id": tree_id,
@@ -149,7 +137,6 @@ def parse_tree_id(tree_id: str) -> dict:
 
 
 def get_species_info(tree_id: str) -> dict:
-    """Get species information for a tree."""
     numeric_id = str(parse_tree_id(tree_id)["numeric_id"])
     short = SPECIES_MAP_SHORT.get(numeric_id, "Unknown")
     return {

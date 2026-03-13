@@ -2,12 +2,6 @@
 Visualization Module
 ====================
 Plotting functions for tree acoustic analysis.
-
-Design principles:
-- All plots saved as PNGs
-- Per-tree plots go in subfolders
-- Colorblind-friendly palette
-- No imports within functions
 """
 from pathlib import Path
 from typing import Optional, List

@@ -730,6 +730,236 @@ plot_stepwise_process <- function(results_broad, results_needle, results_mixed,
 }
 
 # ============================================================
+# COMBINED SUMMARY FIGURES (across all criteria)
+# ============================================================
+
+plot_predictor_consensus <- function(summary_df, output_dir) {
+  #' Panel A: How often was each predictor selected across the 4 criteria?
+  #' Rows = predictors, Columns = response bands, Facets = leaf type
+  #' Cell fill = selection count (0–4). Only predictors selected at least once shown.
+
+  # Expand the "predictors" column into one row per predictor
+  rows <- list()
+  for (i in seq_len(nrow(summary_df))) {
+    preds_str <- summary_df$predictors[i]
+    if (preds_str == "(null)") next
+    preds <- trimws(strsplit(preds_str, "\\+")[[1]])
+    for (p in preds) {
+      rows[[length(rows) + 1]] <- data.frame(
+        criterion  = summary_df$criterion[i],
+        leaf_type  = summary_df$leaf_type[i],
+        response   = summary_df$response[i],
+        predictor  = p,
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+
+  if (length(rows) == 0) {
+    message("  No predictors selected — skipping consensus plot")
+    return(invisible(NULL))
+  }
+
+  expanded <- do.call(rbind, rows)
+
+  # Count: how many criteria selected this predictor for this leaf_type × response?
+  counts <- as.data.table(expanded)[,
+    .(n_criteria = uniqueN(criterion)),
+    by = .(leaf_type, response, predictor)
+  ]
+
+  # Nice labels
+  counts$pred_label <- ifelse(
+    counts$predictor %in% names(VAR_LABELS),
+    VAR_LABELS[counts$predictor],
+    counts$predictor
+  )
+
+  counts$response <- factor(
+    counts$response,
+    levels = c("low", "mid", "high", "overall"),
+    labels = c("Low\n125–500 Hz", "Mid\n0.5–2 kHz", "High\n2–18 kHz", "Overall\n125–18 kHz")
+  )
+
+  counts$leaf_type <- factor(
+    counts$leaf_type,
+    levels = c("broadleaf", "needleleaf", "mixed"),
+    labels = c("Broadleaf", "Needleleaf", "Mixed")
+  )
+
+  # Order predictors by total selection frequency (most selected on top)
+  pred_order <- counts[, .(total = sum(n_criteria)), by = pred_label][order(-total)]$pred_label
+  counts$pred_label <- factor(counts$pred_label, levels = rev(pred_order))
+
+  p <- ggplot(counts, aes(x = response, y = pred_label, fill = n_criteria)) +
+    geom_tile(color = "white", linewidth = 1.2) +
+    geom_text(aes(label = n_criteria), size = 4, fontface = "bold") +
+    facet_wrap(~ leaf_type, nrow = 1) +
+    scale_fill_gradient(
+      low = "#f0f0f0", high = "#2166AC",
+      limits = c(0, 4), breaks = 0:4,
+      name = "Criteria\nagreeing\n(of 4)"
+    ) +
+    labs(
+      title = "Predictor Selection Consensus Across Model Criteria",
+      subtitle = "How many of 4 criteria (Adj.R², F-test, LOOCV, BIC) selected each predictor?",
+      x = "", y = ""
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title    = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(color = "grey40", size = 10),
+      strip.text    = element_text(face = "bold", size = 12),
+      panel.grid    = element_blank(),
+      axis.text.x   = element_text(size = 9),
+      axis.text.y   = element_text(size = 10),
+      plot.background = element_rect(fill = "white", color = NA)
+    )
+
+  ggsave(
+    file.path(output_dir, "combined_predictor_consensus.png"),
+    p, width = 14, height = 7, dpi = 200
+  )
+  message(" Saved: combined_predictor_consensus.png")
+  return(p)
+}
+
+
+plot_model_accuracy_range <- function(summary_df, output_dir) {
+  #' Panel B: Point-range plot of Adj.R² across criteria.
+  #' Each point = one criterion's final model. Shows spread of model performance.
+  #' Faceted by leaf type.
+
+  df_plot <- as.data.table(summary_df)
+
+  # Remove null models (no predictor selected) — these are not real fits
+  df_plot <- df_plot[predictors != "(null)"]
+
+  if (nrow(df_plot) == 0) {
+    message("  No non-null models — skipping accuracy plot")
+    return(invisible(NULL))
+  }
+
+  df_plot$response <- factor(
+    df_plot$response,
+    levels = c("low", "mid", "high", "overall"),
+    labels = c("Low", "Mid", "High", "Overall")
+  )
+
+  lt_colors <- c(
+    "broadleaf"  = CB_ROSE,
+    "needleleaf" = CB_INDIGO,
+    "mixed"      = CB_PURPLE
+  )
+
+  lt_labels <- c(
+    "broadleaf"  = "Broadleaf",
+    "needleleaf" = "Needleleaf",
+    "mixed"      = "Mixed"
+  )
+
+  df_plot$leaf_label <- lt_labels[df_plot$leaf_type]
+  df_plot$leaf_label <- factor(df_plot$leaf_label, levels = c("Broadleaf", "Needleleaf", "Mixed"))
+
+  # Summary stats per leaf_type × response
+  df_summary <- df_plot[, .(
+    median_r2 = median(adj_r2, na.rm = TRUE),
+    min_r2    = min(adj_r2, na.rm = TRUE),
+    max_r2    = max(adj_r2, na.rm = TRUE)
+  ), by = .(leaf_label, response)]
+
+  # Map criteria to shapes
+  crit_shapes <- c(adj_r2 = 16, f_test = 17, loocv = 15, bic = 18)
+
+  p <- ggplot() +
+    # Range bar (min to max across criteria)
+    geom_linerange(
+      data = df_summary,
+      aes(x = response, ymin = min_r2, ymax = max_r2),
+      linewidth = 2, alpha = 0.25, color = "grey40"
+    ) +
+    # Individual criterion points
+    geom_point(
+      data = df_plot,
+      aes(x = response, y = adj_r2, shape = criterion, color = leaf_type),
+      size = 3.5, alpha = 0.85,
+      position = position_dodge(width = 0.3)
+    ) +
+    # Median marker
+    geom_point(
+      data = df_summary,
+      aes(x = response, y = median_r2),
+      shape = 95, size = 10, color = "black"
+    ) +
+    facet_wrap(~ leaf_label, nrow = 1) +
+    scale_color_manual(values = lt_colors, guide = "none") +
+    scale_shape_manual(
+      values = crit_shapes,
+      labels = c(
+        adj_r2 = "Adj. R²",
+        f_test = "F-test",
+        loocv  = "LOOCV",
+        bic    = "BIC"
+      ),
+      name = "Criterion"
+    ) +
+    scale_y_continuous(limits = c(-0.3, 1), breaks = seq(-0.2, 1, 0.2)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "grey60") +
+    labs(
+      title = "Model Performance Across Selection Criteria",
+      subtitle = "Each point = one criterion's final model · Horizontal bar = median · Grey range = min–max",
+      x = "Frequency Band", y = "Adjusted R²"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title    = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(color = "grey40", size = 10),
+      strip.text    = element_text(face = "bold", size = 12),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank(),
+      legend.position = "bottom",
+      plot.background = element_rect(fill = "white", color = NA)
+    )
+
+  ggsave(
+    file.path(output_dir, "combined_model_accuracy.png"),
+    p, width = 12, height = 5.5, dpi = 200
+  )
+  message(" Saved: combined_model_accuracy.png")
+  return(p)
+}
+
+
+plot_combined_summary <- function(summary_df, output_dir) {
+  #' Compose both panels into a single stacked figure.
+  p_top <- plot_predictor_consensus(summary_df, output_dir)
+  p_bot <- plot_model_accuracy_range(summary_df, output_dir)
+
+  if (is.null(p_top) || is.null(p_bot)) return(invisible(NULL))
+
+  combined <- p_top / p_bot +
+    plot_layout(heights = c(3, 2)) +
+    plot_annotation(
+      title    = "Stepwise Forward Selection Summary",
+      subtitle = "4 criteria × 3 leaf type groups × 4 frequency bands",
+      caption  = "Null models (no predictor selected) excluded from lower panel.",
+      theme = theme(
+        plot.title    = element_text(face = "bold", size = 16),
+        plot.subtitle = element_text(size = 11, color = "grey30"),
+        plot.caption  = element_text(size = 9, color = "grey50", hjust = 0),
+        plot.background = element_rect(fill = "white", color = NA)
+      )
+    )
+
+  ggsave(
+    file.path(output_dir, "combined_stepwise_summary.png"),
+    combined, width = 14, height = 12, dpi = 200
+  )
+  message(" Saved: combined_stepwise_summary.png")
+}
+
+
+# ============================================================
 # MAIN
 # ============================================================
 
@@ -841,6 +1071,42 @@ run_analysis <- function(data_path, output_dir) {
 
   summary_df <- do.call(rbind, summary_rows)
   fwrite(summary_df, file.path(output_dir, "stepwise_summary.csv"))
+
+  # Export coefficients for slider module (slider.py reads this)
+  coef_rows <- list()
+  for (crit_name in names(all_results)) {
+    for (lt_name in names(all_results[[crit_name]])) {
+      results <- all_results[[crit_name]][[lt_name]]
+      for (resp_name in names(results)) {
+        res <- results[[resp_name]]
+        if (is.null(res) || length(res$final_preds) == 0) next
+        m <- res$final_model
+        cc <- coef(m)
+        row <- data.frame(
+          criterion = crit_name,
+          leaf_type = lt_name,
+          response_var = resp_name,
+          adj_r2 = summary(m)$adj.r.squared,
+          intercept = cc[1],
+          stringsAsFactors = FALSE
+        )
+        for (i in seq_along(res$final_preds)) {
+          row[[paste0("predictor_", i)]] <- res$final_preds[i]
+          row[[paste0("coef_", i)]] <- cc[res$final_preds[i]]
+        }
+        coef_rows[[length(coef_rows) + 1]] <- row
+      }
+    }
+  }
+  if (length(coef_rows) > 0) {
+    coef_df <- rbindlist(coef_rows, fill = TRUE)
+    fwrite(coef_df, file.path(output_dir, "stepwise_coefficients.csv"))
+    message(sprintf("Saved slider coefficients: %s", file.path(output_dir, "stepwise_coefficients.csv")))
+  }
+
+  # Combined summary figures (across all criteria)
+  message("\n=== Creating combined summary figures ===")
+  plot_combined_summary(summary_df, output_dir)
 
   message("\n=== COMPLETE ===")
   message(sprintf("Outputs: %s", output_dir))
